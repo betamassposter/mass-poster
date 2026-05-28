@@ -1,26 +1,202 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────
+ * Mass Poster — Design System
+ * Dark Editorial + Bento Grid + Electric Cyan accent
+ * ───────────────────────────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Dark-first design — color tokens use oklch for perceptual uniformity */
+  --bg-canvas: oklch(0.13 0 0);        /* near-black canvas */
+  --bg-elevated: oklch(0.165 0 0);     /* surface 1 (header, sidebar) */
+  --bg-card: oklch(0.195 0 0);         /* surface 2 (cards) */
+  --bg-hover: oklch(0.23 0 0);         /* hover state surface */
+  --bg-active: oklch(0.27 0 0);        /* active/pressed */
+
+  --border-subtle: oklch(0.27 0 0);
+  --border-default: oklch(0.34 0 0);
+  --border-strong: oklch(0.45 0 0);
+
+  --text-primary: oklch(0.97 0 0);
+  --text-secondary: oklch(0.72 0 0);
+  --text-muted: oklch(0.55 0 0);
+  --text-faint: oklch(0.42 0 0);
+
+  /* Electric cyan as primary accent — distinctive vs typical purple/blue saas */
+  --accent: oklch(0.82 0.16 195);
+  --accent-strong: oklch(0.74 0.18 195);
+  --accent-faint: oklch(0.3 0.06 195);
+  --accent-glow: oklch(0.82 0.16 195 / 0.18);
+
+  /* Secondary accents — lime + amber for contrast */
+  --lime: oklch(0.88 0.22 130);
+  --amber: oklch(0.82 0.18 70);
+  --magenta: oklch(0.72 0.22 340);
+
+  /* Status semantic */
+  --status-success: oklch(0.74 0.16 145);
+  --status-warning: oklch(0.82 0.18 70);
+  --status-danger: oklch(0.68 0.22 25);
+  --status-info: oklch(0.72 0.15 240);
+  --status-success-bg: oklch(0.74 0.16 145 / 0.12);
+  --status-warning-bg: oklch(0.82 0.18 70 / 0.12);
+  --status-danger-bg: oklch(0.68 0.22 25 / 0.13);
+  --status-info-bg: oklch(0.72 0.15 240 / 0.12);
+
+  /* Typography scale */
+  --font-display: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Glow / shadow */
+  --shadow-card: 0 1px 0 oklch(1 0 0 / 0.04), 0 4px 12px oklch(0 0 0 / 0.4);
+  --shadow-pop: 0 8px 32px oklch(0 0 0 / 0.6), 0 1px 0 oklch(1 0 0 / 0.06);
+  --glow-accent: 0 0 0 1px oklch(0.82 0.16 195 / 0.4), 0 0 24px oklch(0.82 0.16 195 / 0.25);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg-canvas: var(--bg-canvas);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-card: var(--bg-card);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-active: var(--bg-active);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-faint: var(--accent-faint);
+
+  --color-lime: var(--lime);
+  --color-amber: var(--amber);
+  --color-magenta: var(--magenta);
+
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
+  --color-status-danger: var(--status-danger);
+  --color-status-info: var(--status-info);
+
+  --font-sans: var(--font-display);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Base ─── */
+html {
+  background: var(--bg-canvas);
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, oklch(0.82 0.16 195 / 0.04), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, oklch(0.88 0.22 130 / 0.025), transparent 60%),
+    var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Utility classes used across the app ─── */
+.surface-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+.surface-elevated {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+.surface-glass {
+  background: oklch(0.18 0 0 / 0.7);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid oklch(1 0 0 / 0.06);
+}
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+/* Focus ring — electric cyan */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 8px;
+  border: 2px solid var(--bg-canvas);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* ─── Animations ─── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes float-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.82 0.16 195 / 0.4); }
+  50% { box-shadow: 0 0 0 8px oklch(0.82 0.16 195 / 0); }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.animate-float-in {
+  animation: float-in 320ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-out infinite;
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.21 0 0) 0%,
+    oklch(0.28 0 0) 50%,
+    oklch(0.21 0 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Selection */
+::selection {
+  background: oklch(0.82 0.16 195 / 0.35);
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

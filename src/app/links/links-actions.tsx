@@ -2,6 +2,9 @@
 
 import { useState, useTransition, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Field, Input, Select } from '@/components/ui/input';
+import { Link as LinkIcon } from 'lucide-react';
 
 interface Brand {
   id: string;
@@ -33,10 +36,7 @@ export function LinksActions({
   const [utmContent, setUtmContent] = useState('');
   const [result, setResult] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  const offersForBrand = useMemo(
-    () => offers.filter((o) => o.brand_id === brandId),
-    [brandId, offers],
-  );
+  const offersForBrand = useMemo(() => offers.filter((o) => o.brand_id === brandId), [brandId, offers]);
 
   function create() {
     setResult(null);
@@ -57,10 +57,7 @@ export function LinksActions({
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? 'Request failed');
-        setResult({
-          type: 'ok',
-          text: `✅ ${json.short_url}`,
-        });
+        setResult({ type: 'ok', text: json.short_url });
         router.refresh();
       } catch (e) {
         setResult({ type: 'err', text: (e as Error).message });
@@ -68,110 +65,87 @@ export function LinksActions({
     });
   }
 
+  if (brands.length === 0) {
+    return (
+      <div className="text-sm text-text-muted py-3">
+        No brands. Run <code className="font-mono">pnpm brand:seed</code>.
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      {brands.length === 0 ? (
-        <div className="text-sm text-zinc-500">
-          No brands yet. Run <code>pnpm brand:seed</code>.
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="text-sm">
-              <span className="block text-zinc-500 mb-1">Brand</span>
-              <select
-                value={brandId}
-                onChange={(e) => {
-                  setBrandId(e.target.value);
-                  setOfferId('');
-                }}
-                className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
-              >
-                {brands.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="block text-zinc-500 mb-1">Offer (optional)</span>
-              <select
-                value={offerId}
-                onChange={(e) => setOfferId(e.target.value)}
-                className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
-              >
-                <option value="">— none —</option>
-                {offersForBrand.map((o) => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm md:col-span-2">
-              <span className="block text-zinc-500 mb-1">Target URL</span>
-              <input
-                type="url"
-                value={targetUrl}
-                onChange={(e) => setTargetUrl(e.target.value)}
-                className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="block text-zinc-500 mb-1">UTM source</span>
-              <input
-                type="text"
-                value={utmSource}
-                onChange={(e) => setUtmSource(e.target.value)}
-                className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="block text-zinc-500 mb-1">UTM medium</span>
-              <input
-                type="text"
-                value={utmMedium}
-                onChange={(e) => setUtmMedium(e.target.value)}
-                className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="block text-zinc-500 mb-1">UTM campaign</span>
-              <input
-                type="text"
-                value={utmCampaign}
-                onChange={(e) => setUtmCampaign(e.target.value)}
-                className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="block text-zinc-500 mb-1">UTM content (e.g. account handle)</span>
-              <input
-                type="text"
-                value={utmContent}
-                onChange={(e) => setUtmContent(e.target.value)}
-                className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
-              />
-            </label>
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Field label="Brand">
+          <Select
+            value={brandId}
+            onChange={(e) => {
+              setBrandId(e.target.value);
+              setOfferId('');
+            }}
+          >
+            {brands.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Offer (optional)">
+          <Select value={offerId} onChange={(e) => setOfferId(e.target.value)}>
+            <option value="">— none —</option>
+            {offersForBrand.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Target URL" required>
+          <Input type="url" value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} />
+        </Field>
+        <div className="md:col-span-1" />
+        <Field label="UTM source">
+          <Input type="text" value={utmSource} onChange={(e) => setUtmSource(e.target.value)} />
+        </Field>
+        <Field label="UTM medium">
+          <Input type="text" value={utmMedium} onChange={(e) => setUtmMedium(e.target.value)} />
+        </Field>
+        <Field label="UTM campaign">
+          <Input type="text" value={utmCampaign} onChange={(e) => setUtmCampaign(e.target.value)} />
+        </Field>
+        <Field label="UTM content (account handle)">
+          <Input type="text" value={utmContent} onChange={(e) => setUtmContent(e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button
+          onClick={create}
+          variant="accent"
+          loading={isPending}
+          disabled={!brandId || !targetUrl}
+          icon={<LinkIcon size={14} />}
+        >
+          Create link
+        </Button>
+        {result && (
+          <div
+            className={`text-sm flex items-center gap-2 ${
+              result.type === 'ok' ? 'text-[color:var(--status-success)]' : 'text-[color:var(--status-danger)]'
+            }`}
+          >
+            {result.type === 'ok' ? (
+              <>
+                <span>✓</span>
+                <code className="font-mono text-[12px] text-[color:var(--accent)]">{result.text}</code>
+              </>
+            ) : (
+              <>⚠ {result.text}</>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={create}
-              disabled={isPending || !brandId}
-              className="rounded bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-4 py-1.5 text-sm font-medium hover:opacity-90 disabled:opacity-50"
-            >
-              {isPending ? 'Creating…' : 'Create link'}
-            </button>
-            <span className="text-xs text-zinc-500">
-              Will live at <code>{origin}/l/<i>xxxxxxxxxx</i></code>
-            </span>
-          </div>
-          {result && (
-            <div
-              className={`text-sm ${result.type === 'ok' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}
-            >
-              {result.text}
-            </div>
-          )}
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

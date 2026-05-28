@@ -2,16 +2,20 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Select, Field } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
+import { Plus, Server } from 'lucide-react';
 
 type Platform = 'instagram' | 'tiktok' | 'youtube_shorts' | 'x' | 'linkedin' | 'facebook';
 
 const PLATFORMS: { value: Platform; label: string }[] = [
-  { value: 'instagram', label: '📸 Instagram' },
-  { value: 'tiktok', label: '🎵 TikTok' },
-  { value: 'youtube_shorts', label: '▶️ YouTube Shorts' },
-  { value: 'x', label: '𝕏 X' },
-  { value: 'linkedin', label: '💼 LinkedIn' },
-  { value: 'facebook', label: 'f Facebook' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'youtube_shorts', label: 'YouTube Shorts' },
+  { value: 'x', label: 'X (Twitter)' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'facebook', label: 'Facebook' },
 ];
 
 interface Brand {
@@ -47,7 +51,7 @@ export function AccountActions({
         if (!res.ok) throw new Error(json.error ?? 'Request failed');
         setMessage({
           type: 'ok',
-          text: `✅ Created @${json.handle} (profile ${json.adspower_profile_id})`,
+          text: `Created @${json.handle} — profile ${json.adspower_profile_id}`,
         });
         router.refresh();
       } catch (e) {
@@ -67,7 +71,7 @@ export function AccountActions({
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? 'Request failed');
-        setMessage({ type: 'ok', text: `✅ Rented ${json.count} proxies` });
+        setMessage({ type: 'ok', text: `Rented ${json.count} proxies` });
         router.refresh();
       } catch (e) {
         setMessage({ type: 'err', text: (e as Error).message });
@@ -76,92 +80,79 @@ export function AccountActions({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {brands.length === 0 ? (
-        <div className="text-sm text-zinc-500">
-          No brands yet. Run <code className="px-1 rounded bg-zinc-100 dark:bg-zinc-800">pnpm brand:seed</code>.
+        <div className="text-sm text-text-muted py-4">
+          No brands. Run <code className="px-1 rounded bg-bg-elevated font-mono">pnpm brand:seed</code>.
         </div>
       ) : (
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="block text-zinc-500 mb-1">Brand</span>
-            <select
-              value={brandId}
-              onChange={(e) => setBrandId(e.target.value)}
-              disabled={isPending}
-              className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
-            >
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+          <Field label="Brand">
+            <Select value={brandId} onChange={(e) => setBrandId(e.target.value)} disabled={isPending}>
               {brands.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="block text-zinc-500 mb-1">Platform</span>
-            <select
+            </Select>
+          </Field>
+          <Field label="Platform">
+            <Select
               value={platform}
               onChange={(e) => setPlatform(e.target.value as Platform)}
               disabled={isPending}
-              className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
             >
               {PLATFORMS.map((p) => (
                 <option key={p.value} value={p.value}>
                   {p.label}
                 </option>
               ))}
-            </select>
-          </label>
-          <button
+            </Select>
+          </Field>
+          <Button
             onClick={createAccount}
+            variant="accent"
             disabled={isPending || !brandId}
-            className="rounded bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-4 py-1.5 text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            loading={isPending}
+            icon={!isPending && <Plus size={14} />}
           >
-            {isPending ? 'Creating…' : 'Create account'}
-          </button>
-          {proxiesAvailable === 0 && (
-            <span className="text-xs text-amber-600 dark:text-amber-400 self-center">
-              ⚠️ No proxies free
-            </span>
-          )}
+            Create account
+          </Button>
         </div>
       )}
 
-      <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="block text-zinc-500 mb-1">Rent proxies (mock)</span>
-          <input
+      {proxiesAvailable === 0 && brands.length > 0 && (
+        <div className="text-[12px] text-[color:var(--status-warning)] flex items-center gap-1.5">
+          ⚠ No proxies available. Rent some below.
+        </div>
+      )}
+
+      <div className="border-t border-border-subtle pt-5 grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-end">
+        <Field label="Rent proxies (mock)">
+          <Input
             type="number"
             min={1}
             max={50}
             value={proxyCount}
             onChange={(e) => setProxyCount(Number(e.target.value))}
             disabled={isPending}
-            className="w-20 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5"
           />
-        </label>
-        <button
-          onClick={rentProxies}
-          disabled={isPending}
-          className="rounded border border-zinc-300 dark:border-zinc-700 px-4 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {isPending ? 'Renting…' : 'Rent N proxies'}
-        </button>
-        <span className="text-xs text-zinc-500 self-center">
-          (mock until <code>iProyal</code> credentials added)
+        </Field>
+        <Button onClick={rentProxies} disabled={isPending} loading={isPending} icon={<Server size={14} />}>
+          Rent {proxyCount} proxies
+        </Button>
+        <span className="text-[11px] text-text-muted self-center md:text-right">
+          mock until <code className="font-mono">iProyal</code> creds
         </span>
       </div>
 
       {message && (
         <div
-          className={`text-sm ${
-            message.type === 'ok'
-              ? 'text-green-700 dark:text-green-400'
-              : 'text-red-700 dark:text-red-400'
+          className={`text-sm flex items-center gap-2 ${
+            message.type === 'ok' ? 'text-[color:var(--status-success)]' : 'text-[color:var(--status-danger)]'
           }`}
         >
-          {message.text}
+          {message.type === 'ok' ? '✓' : '⚠'} {message.text}
         </div>
       )}
     </div>

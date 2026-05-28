@@ -7,6 +7,8 @@ import type {
   ScheduleRequest,
   TickResult,
 } from './types.ts';
+import { fireEvent } from '../webhooks/dispatcher.ts';
+import { extractFirstComment } from './first-comment.ts';
 
 /**
  * Scheduler service.
@@ -167,16 +169,25 @@ export class PostingScheduler {
         if (!videoUrl) throw new Error('Content has no final_edit_url asset');
 
         const platformAccountId = account.zernio_account_id ?? account.handle;
-        const caption = post.caption_variant ?? content.caption ?? '';
+        const rawCaption = post.caption_variant ?? content.caption ?? '';
         const hashtags = (post.hashtags_variant ?? content.hashtags) as string[];
+
+        // First-comment trick: on IG/TT, hashtags in 1st comment perform better
+        // than inline in caption. Extract + post separately.
+        const { clean_caption, first_comment } = extractFirstComment(
+          rawCaption,
+          hashtags,
+          account.platform as Platform,
+        );
 
         // Publish
         const publishResult = await provider.publish({
           platform_account_id: platformAccountId,
           platform: account.platform as Platform,
           video_url: videoUrl,
-          caption,
+          caption: clean_caption,
           hashtags,
+          first_comment,
         });
 
         // Update row with provider id + status
@@ -192,7 +203,19 @@ export class PostingScheduler {
           })
           .eq('id', post.id);
 
-        if (isPublished) result.published++;
+        if (isPublished) {
+          result.published++;
+          // Fire webhook event (non-blocking)
+          void fireEvent(this.supabase, this.workspaceId, 'post.published', {
+            post_id: post.id,
+            content_id: post.content_id,
+            account_id: post.account_id,
+            platform: account.platform,
+            platform_post_id: publishResult.provider_post_id,
+            platform_post_url: publishResult.platform_post_url,
+            posted_at: new Date().toISOString(),
+          });
+        }
         result.details.push({ post_id: post.id, status: publishResult.status });
       } catch (err) {
         result.failed++;
@@ -230,6 +253,16 @@ export class PostingScheduler {
           status: 'failed',
           error: `${msg}${isDeadLetter ? ' [DEAD LETTER]' : ` (retry ${newRetries}/${MAX_RETRIES} in ${Math.round(nextRetryMs / 1000)}s)`}`,
         });
+        // Fire dead-letter webhook
+        if (isDeadLetter) {
+          void fireEvent(this.supabase, this.workspaceId, 'post.dead_letter', {
+            post_id: post.id,
+            content_id: post.content_id,
+            account_id: post.account_id,
+            error: msg,
+            attempts: newRetries,
+          });
+        }
       }
     }
     return result;

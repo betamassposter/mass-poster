@@ -31,6 +31,7 @@ export function BrandCreatorWizard() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [niche, setNiche] = useState('');
+  const [targetCountry, setTargetCountry] = useState('IT');
 
   // Step 2 — Voice
   const [tone, setTone] = useState<'expert' | 'friendly' | 'edgy' | 'inspirational'>('edgy');
@@ -67,6 +68,7 @@ export function BrandCreatorWizard() {
             slug,
             name,
             niche,
+            target_country: targetCountry,
             voice_config: {
               tone,
               formality: 3,
@@ -184,6 +186,25 @@ export function BrandCreatorWizard() {
                 placeholder="B2B lead generation for web agencies, freelancers & closers (Italy-first)"
                 rows={3}
               />
+            </Field>
+            <Field
+              label="Target country"
+              required
+              hint="Used to allocate mobile proxies + match Cloud Phone fingerprint to this market"
+            >
+              <Select value={targetCountry} onChange={(e) => setTargetCountry(e.target.value)}>
+                <option value="IT">Italy (IT)</option>
+                <option value="US">United States (US)</option>
+                <option value="GB">United Kingdom (GB)</option>
+                <option value="DE">Germany (DE)</option>
+                <option value="FR">France (FR)</option>
+                <option value="ES">Spain (ES)</option>
+                <option value="NL">Netherlands (NL)</option>
+                <option value="BR">Brazil (BR)</option>
+                <option value="MX">Mexico (MX)</option>
+                <option value="CA">Canada (CA)</option>
+                <option value="AU">Australia (AU)</option>
+              </Select>
             </Field>
           </div>
         )}

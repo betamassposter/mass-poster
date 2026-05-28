@@ -114,6 +114,83 @@ export interface ProxyProvider {
   rentProxies(count: number, country?: string): Promise<ProxyCredential[]>;
   /** Verify a proxy works (HTTP request via the proxy). */
   testProxy(proxy: ProxyCredential): Promise<{ ok: boolean; latency_ms: number; ip?: string }>;
+  /** Optional: rotate / get a fresh IP on the same proxy (mobile proxies support this). */
+  rotateIp?(proxy: ProxyCredential): Promise<{ ok: boolean; new_ip?: string }>;
+  /** Optional: release a proxy back to the pool (for paid mobile proxies billed per session). */
+  releaseProxy?(proxy: ProxyCredential): Promise<void>;
+}
+
+// ─────────────────────────────────────────────────────────────
+// IP reputation provider — runs BEFORE a proxy is bound to an account.
+// Multiple providers are composed (zerobounce + browserleaks-style fingerprint).
+// A proxy is only `clean` if ALL providers return clean: true.
+// ─────────────────────────────────────────────────────────────
+
+export interface IpReputationSignals {
+  /** Blacklists the IP appears on (Spamhaus, Barracuda, etc.). Empty = none. */
+  blacklisted_on?: string[];
+  /** Country code returned by IP geolocation (compare with expected country). */
+  geo_country?: string;
+  /** True if geo matches the country we requested when renting the proxy. */
+  geo_matches_target?: boolean;
+  /** ASN (autonomous system number) and the org behind it. */
+  asn?: number;
+  asn_org?: string;
+  /** True if the ASN is a residential/mobile ISP (vs a known datacenter/hosting org). */
+  is_residential?: boolean;
+  /** DNS leak: the proxy's DNS resolver geo doesn't match the proxy's IP geo. */
+  dns_leak?: boolean;
+  /** WebRTC leak: only detectable from inside a Cloud Phone session — deferred. */
+  webrtc_leak?: boolean;
+  /** Fraud / risk score (0-100, higher = riskier). */
+  fraud_score?: number;
+  /** Free-form notes describing any other concerns. */
+  notes?: string[];
+}
+
+export interface IpReputationResult {
+  /** Provider that produced this result (e.g. 'zerobounce', 'ip-fingerprint'). */
+  provider: string;
+  /** IP that was checked. */
+  ip: string;
+  /** True iff there are zero red flags from this provider. */
+  clean: boolean;
+  /** Score 0-100 if the provider supports it. 100 = best. */
+  score?: number;
+  signals: IpReputationSignals;
+  /** Raw vendor response — stored for debugging in proxy_validation_check.results. */
+  raw?: unknown;
+  /** ISO timestamp. */
+  checked_at: string;
+}
+
+export interface IpReputationProvider {
+  readonly name: string;
+  /** Ready means: env config present + reachable. */
+  isReady(): Promise<boolean>;
+  /**
+   * Check `ip`. If `proxy` is provided, the check should be run through that
+   * proxy (so we observe what the target platform would see).
+   */
+  check(ip: string, opts?: { proxy?: ProxyCredential; expectedCountry?: string }): Promise<IpReputationResult>;
+}
+
+/** Aggregate validator verdict, written to proxy.last_validation_summary. */
+export interface ProxyValidationVerdict {
+  /** True only if every provider returned clean. */
+  clean: boolean;
+  /** 'pending' | 'clean' | 'dirty' | 'error' — mirrors the DB enum. */
+  status: 'pending' | 'clean' | 'dirty' | 'error';
+  /** Egress IP we observed. */
+  ip: string | null;
+  /** Per-provider results. */
+  results: IpReputationResult[];
+  /** Human-readable reasons the proxy was rejected (empty if clean). */
+  failure_reasons: string[];
+  /** Total ms across all providers. */
+  duration_ms: number;
+  /** ISO timestamp. */
+  checked_at: string;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -138,7 +215,12 @@ export interface CreateAccountRequest {
 
 export interface CreateAccountResult {
   account_id: string;
-  adspower_profile_id: string;
+  /** Antidetect profile id — AdsPower's user_id or Multilogin's profile uuid. */
+  profile_id: string;
+  /** Which antidetect provider was used. */
+  profile_provider: string;
+  /** Cloud Phone instance id, when running on Multilogin Cloud Phones. */
+  cloud_phone_id?: string;
   proxy_id: string | null;
   handle: string;
   status: AccountStatus;

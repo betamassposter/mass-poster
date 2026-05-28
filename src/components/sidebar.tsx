@@ -13,6 +13,7 @@ import {
   Sparkles,
   Settings,
   Calendar,
+  Network,
 } from 'lucide-react';
 
 interface NavItem {
@@ -26,6 +27,7 @@ const PRIMARY: NavItem[] = [
   { href: '/', label: 'Overview', icon: Home },
   { href: '/brands', label: 'Brands', icon: Sparkles },
   { href: '/accounts', label: 'Accounts', icon: Users },
+  { href: '/proxies', label: 'Proxies', icon: Network },
   { href: '/content', label: 'Content', icon: FileText },
   { href: '/schedule', label: 'Schedule', icon: Calendar },
   { href: '/links', label: 'Links', icon: LinkIcon },

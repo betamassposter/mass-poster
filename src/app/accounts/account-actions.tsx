@@ -51,7 +51,7 @@ export function AccountActions({
         if (!res.ok) throw new Error(json.error ?? 'Request failed');
         setMessage({
           type: 'ok',
-          text: `Created @${json.handle} — profile ${json.adspower_profile_id}`,
+          text: `Created @${json.handle} — ${json.profile_provider} profile ${json.profile_id?.slice(0, 12)}…`,
         });
         router.refresh();
       } catch (e) {

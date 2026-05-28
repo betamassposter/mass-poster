@@ -1,11 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getAntidetectProvider, getProxyProvider } from './client.ts';
+import { ProxyValidator } from './proxy-validator.ts';
+import { env } from '../env.ts';
 import type {
   AccountStatus,
   CreateAccountRequest,
   CreateAccountResult,
   DeviceProfile,
   Platform,
+  ProxyValidationVerdict,
 } from './types.ts';
 
 /**
@@ -42,29 +45,128 @@ export class AccountOrchestrator {
   }
 
   /**
-   * Provision the proxy pool from a provider (or skip if already done).
-   * Rents N proxies and inserts into `proxy` table as status='available'.
+   * Provision the proxy pool from a provider, then run the reputation gate
+   * on each newly-allocated proxy. A proxy that fails validation is inserted
+   * as `validation_status='dirty'` and excluded from auto-pick. Pass-through
+   * UI / API can then trigger rotation.
    */
   async provisionProxyPool(count: number, country = 'IT') {
     const provider = getProxyProvider();
+    const validator = new ProxyValidator();
     const proxies = await provider.rentProxies(count, country);
-    const rows = proxies.map((p) => ({
-      workspace_id: this.workspaceId,
-      provider: p.provider,
-      host: p.host,
-      port: p.port,
-      username: p.username ?? null,
-      password_encrypted: p.password ?? null, // TODO: encrypt with pgsodium when prod
-      country: p.country ?? null,
-      city: p.city ?? null,
-      status: 'available' as const,
-    }));
-    const { data, error } = await this.supabase
+
+    const results: Array<{ id: string; validation: ProxyValidationVerdict }> = [];
+    for (const p of proxies) {
+      const verdict = await validator.validate(p, {
+        expectedCountry: country,
+        reason: 'initial_allocation',
+      });
+
+      const { data: row, error } = await this.supabase
+        .from('proxy')
+        .insert({
+          workspace_id: this.workspaceId,
+          provider: p.provider,
+          proxy_type: 'mobile',
+          host: p.host,
+          port: p.port,
+          username: p.username ?? null,
+          password_encrypted: p.password ?? null,
+          country: p.country ?? null,
+          city: p.city ?? null,
+          status: 'available',
+          validation_status: verdict.status,
+          last_validated_at: verdict.checked_at,
+          last_validation_summary: {
+            clean: verdict.clean,
+            ip: verdict.ip,
+            failure_reasons: verdict.failure_reasons,
+            providers: verdict.results.map((r) => ({
+              provider: r.provider,
+              clean: r.clean,
+              score: r.score,
+            })),
+          },
+          ip_address: verdict.ip,
+        })
+        .select('id')
+        .single();
+      if (error || !row) throw new Error(`Failed to insert proxy: ${error?.message}`);
+
+      // Persist the full validation result
+      await this.supabase.from('proxy_validation_check').insert({
+        workspace_id: this.workspaceId,
+        proxy_id: row.id,
+        verdict: verdict.status,
+        ip_address: verdict.ip,
+        results: verdict.results,
+        reason: 'initial_allocation',
+        duration_ms: verdict.duration_ms,
+      });
+
+      results.push({ id: row.id, validation: verdict });
+    }
+    return results;
+  }
+
+  /** Re-run reputation validation on a specific proxy and persist the verdict. */
+  async validateProxy(
+    proxy_id: string,
+    reason: string = 'manual',
+  ): Promise<ProxyValidationVerdict> {
+    const { data: row, error } = await this.supabase
       .from('proxy')
-      .insert(rows)
-      .select('id, host, port, country, status');
-    if (error) throw new Error(`Failed to insert proxies: ${error.message}`);
-    return data ?? [];
+      .select('id, host, port, username, password_encrypted, country, provider')
+      .eq('id', proxy_id)
+      .eq('workspace_id', this.workspaceId)
+      .single();
+    if (error || !row) throw new Error(`Proxy ${proxy_id} not found`);
+
+    const validator = new ProxyValidator();
+    const verdict = await validator.validate(
+      {
+        host: row.host,
+        port: row.port,
+        username: row.username ?? undefined,
+        password: row.password_encrypted ?? undefined,
+        type: 'http',
+        country: row.country ?? undefined,
+        provider: row.provider,
+      },
+      { expectedCountry: row.country ?? undefined, reason },
+    );
+
+    await this.supabase
+      .from('proxy')
+      .update({
+        validation_status: verdict.status,
+        last_validated_at: verdict.checked_at,
+        last_validation_summary: {
+          clean: verdict.clean,
+          ip: verdict.ip,
+          failure_reasons: verdict.failure_reasons,
+          providers: verdict.results.map((r) => ({
+            provider: r.provider,
+            clean: r.clean,
+            score: r.score,
+          })),
+        },
+        ip_address: verdict.ip,
+      })
+      .eq('id', proxy_id)
+      .eq('workspace_id', this.workspaceId);
+
+    await this.supabase.from('proxy_validation_check').insert({
+      workspace_id: this.workspaceId,
+      proxy_id,
+      verdict: verdict.status,
+      ip_address: verdict.ip,
+      results: verdict.results,
+      reason,
+      duration_ms: verdict.duration_ms,
+    });
+
+    return verdict;
   }
 
   /**
@@ -93,7 +195,7 @@ export class AccountOrchestrator {
     if (req.proxy_id) {
       const { data, error } = await this.supabase
         .from('proxy')
-        .select('id, host, port, username, password_encrypted, country, status')
+        .select('id, host, port, username, password_encrypted, country, status, validation_status')
         .eq('id', req.proxy_id)
         .eq('workspace_id', this.workspaceId)
         .single();
@@ -101,14 +203,25 @@ export class AccountOrchestrator {
       if (data.status !== 'available') {
         throw new Error(`Proxy ${req.proxy_id} is ${data.status}, not available`);
       }
+      if (env.IP_REPUTATION_STRICT && data.validation_status !== 'clean') {
+        throw new Error(
+          `Proxy ${req.proxy_id} validation_status is '${data.validation_status}' — refusing to bind under strict mode. Run validation/rotation first.`,
+        );
+      }
       proxyRow = data;
     } else {
-      // Auto-pick first available proxy
-      const { data, error } = await this.supabase
+      // Auto-pick first available + clean proxy in the requested country.
+      const query = this.supabase
         .from('proxy')
-        .select('id, host, port, username, password_encrypted, country, status')
+        .select('id, host, port, username, password_encrypted, country, status, validation_status')
         .eq('workspace_id', this.workspaceId)
-        .eq('status', 'available')
+        .eq('status', 'available');
+      const filtered = env.IP_REPUTATION_STRICT
+        ? query.eq('validation_status', 'clean')
+        : query;
+      const { data, error } = await (
+        req.country ? filtered.eq('country', req.country) : filtered
+      )
         .limit(1)
         .maybeSingle();
       if (error) throw new Error(`Failed to query proxies: ${error.message}`);
@@ -170,10 +283,16 @@ export class AccountOrchestrator {
         .eq('workspace_id', this.workspaceId);
     }
 
-    // 6) Persist adspower_profile_id and log event
+    // 6) Persist profile id (column depends on provider) and log event.
+    const profileUpdate: Record<string, string> = {};
+    if (antidetect.name === 'multilogin') {
+      profileUpdate.multilogin_profile_id = profile.profile_id;
+    } else {
+      profileUpdate.adspower_profile_id = profile.profile_id;
+    }
     await this.supabase
       .from('account')
-      .update({ adspower_profile_id: profile.profile_id })
+      .update(profileUpdate)
       .eq('id', accountId)
       .eq('workspace_id', this.workspaceId);
 
@@ -191,32 +310,38 @@ export class AccountOrchestrator {
 
     return {
       account_id: accountId,
-      adspower_profile_id: profile.profile_id,
+      profile_id: profile.profile_id,
+      profile_provider: antidetect.name,
       proxy_id: proxyRow?.id ?? null,
       handle,
       status: 'creating',
     };
   }
 
-  /** Open the browser for this account; returns WebDriver endpoint for Playwright/Puppeteer. */
+  /** Open the browser/cloud-phone for this account; returns the driver endpoint. */
   async startBrowser(account_id: string) {
     const { data: acct, error } = await this.supabase
       .from('account')
-      .select('id, adspower_profile_id, platform, handle')
+      .select('id, adspower_profile_id, multilogin_profile_id, platform, handle')
       .eq('id', account_id)
       .eq('workspace_id', this.workspaceId)
       .single();
     if (error || !acct) throw new Error(`Account ${account_id} not found`);
-    if (!acct.adspower_profile_id) {
-      throw new Error(`Account ${account_id} has no adspower_profile_id`);
+    const profileId = acct.multilogin_profile_id ?? acct.adspower_profile_id;
+    if (!profileId) {
+      throw new Error(`Account ${account_id} has no antidetect profile`);
     }
     const antidetect = await getAntidetectProvider();
-    const browser = await antidetect.startBrowser(acct.adspower_profile_id);
+    const browser = await antidetect.startBrowser(profileId);
     await this.supabase.from('account_event').insert({
       account_id,
       workspace_id: this.workspaceId,
       event_type: 'browser_started',
-      details: { ws_endpoint: browser.ws_endpoint, pid: browser.pid },
+      details: {
+        provider: antidetect.name,
+        ws_endpoint: browser.ws_endpoint,
+        pid: browser.pid,
+      },
     });
     return browser;
   }
@@ -224,18 +349,19 @@ export class AccountOrchestrator {
   async stopBrowser(account_id: string) {
     const { data: acct } = await this.supabase
       .from('account')
-      .select('adspower_profile_id')
+      .select('adspower_profile_id, multilogin_profile_id')
       .eq('id', account_id)
       .eq('workspace_id', this.workspaceId)
       .single();
-    if (!acct?.adspower_profile_id) return;
+    const profileId = acct?.multilogin_profile_id ?? acct?.adspower_profile_id;
+    if (!profileId) return;
     const antidetect = await getAntidetectProvider();
-    await antidetect.stopBrowser(acct.adspower_profile_id);
+    await antidetect.stopBrowser(profileId);
     await this.supabase.from('account_event').insert({
       account_id,
       workspace_id: this.workspaceId,
       event_type: 'browser_stopped',
-      details: {},
+      details: { provider: antidetect.name },
     });
   }
 

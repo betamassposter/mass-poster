@@ -24,7 +24,7 @@ export default async function AccountsPage() {
     supabase
       .from('account')
       .select(
-        'id, handle, platform, status, health_score, daily_post_cap, adspower_profile_id, proxy_id, brand_id, warmup_started_at, activated_at, created_at',
+        'id, handle, platform, status, health_score, daily_post_cap, adspower_profile_id, multilogin_profile_id, proxy_id, brand_id, warmup_started_at, activated_at, warmup_stage, created_at',
       )
       .eq('workspace_id', CURRENT_WORKSPACE_ID)
       .order('created_at', { ascending: false }),
@@ -199,7 +199,11 @@ export default async function AccountsPage() {
                         {a.daily_post_cap}/d
                       </td>
                       <td className="px-5 py-3.5 font-mono text-[11px] text-text-muted">
-                        {a.adspower_profile_id ?? <span className="text-text-faint">—</span>}
+                        {a.multilogin_profile_id
+                          ? <span title="Multilogin Cloud Phone">{a.multilogin_profile_id.slice(0, 10)}…</span>
+                          : a.adspower_profile_id
+                            ? <span title="AdsPower (legacy)" className="text-text-faint">{a.adspower_profile_id.slice(0, 10)}…</span>
+                            : <span className="text-text-faint">—</span>}
                       </td>
                       <td className="px-5 py-3.5 font-mono text-[11px] text-text-muted">
                         {a.proxy_id ? a.proxy_id.slice(0, 8) : <span className="text-text-faint">—</span>}

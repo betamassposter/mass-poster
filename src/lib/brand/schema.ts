@@ -119,6 +119,8 @@ export const brandConfigSchema = z.object({
   target_personas: z.array(personaSchema).default([]),
   default_platforms: z.array(platformSchema).default(['instagram', 'tiktok']),
   status: brandStatusSchema.default('draft'),
+  /** ISO 3166-1 alpha-2 country code — drives proxy + cloud phone geo. */
+  target_country: z.string().length(2).toUpperCase().default('IT'),
 });
 export type BrandConfig = z.infer<typeof brandConfigSchema>;
 

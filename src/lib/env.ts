@@ -38,6 +38,23 @@ const schema = z.object({
   ADSPOWER_API_BASE: z.url().default('http://local.adspower.net:50325'),
   IPROYAL_API_KEY: z.string().optional(),
 
+  // Multilogin Cloud Phones + Mobile Proxies (pivot 2026-05-28)
+  MULTILOGIN_API_BASE: z.url().default('https://api.multilogin.com'),
+  MULTILOGIN_API_TOKEN: z.string().optional(),
+  MULTILOGIN_WORKSPACE_ID: z.string().optional(),
+  /** When true (default), a proxy that fails reputation gating cannot be assigned. */
+  IP_REPUTATION_STRICT: z
+    .union([z.literal('true'), z.literal('false')])
+    .default('true')
+    .transform((v) => v === 'true'),
+
+  // IP reputation providers
+  ZEROBOUNCE_API_KEY: z.string().optional(),
+  /** Free tier: ipapi.co / ip-api.com / ipinfo.io — used as a fallback geo/ASN lookup. */
+  IPINFO_TOKEN: z.string().optional(),
+  /** AbuseIPDB free tier — 1000 checks/day, used as a blacklist signal. */
+  ABUSEIPDB_API_KEY: z.string().optional(),
+
   // Posting (Blocco 7)
   ZERNIO_API_KEY: z.string().optional(),
   BROWSER_USE_API_KEY: z.string().optional(),

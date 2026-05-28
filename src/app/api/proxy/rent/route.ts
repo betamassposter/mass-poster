@@ -15,8 +15,25 @@ export async function POST(req: Request) {
     const parsed = schema.parse(body);
     const supabase = getSupabaseAdmin();
     const orchestrator = new AccountOrchestrator(supabase, CURRENT_WORKSPACE_ID);
-    const proxies = await orchestrator.provisionProxyPool(parsed.count, parsed.country);
-    return NextResponse.json({ ok: true, count: proxies.length, proxies });
+    const results = await orchestrator.provisionProxyPool(parsed.count, parsed.country);
+    const summary = results.reduce(
+      (acc, r) => {
+        acc[r.validation.status] = (acc[r.validation.status] ?? 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+    return NextResponse.json({
+      ok: true,
+      count: results.length,
+      proxies: results.map((r) => ({
+        id: r.id,
+        validation_status: r.validation.status,
+        ip: r.validation.ip,
+        failure_reasons: r.validation.failure_reasons,
+      })),
+      summary,
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(

@@ -38,6 +38,7 @@ export async function POST(req: Request) {
         target_personas: parsed.target_personas,
         default_platforms: parsed.default_platforms,
         status: parsed.status,
+        target_country: parsed.target_country,
       })
       .select('id')
       .single();

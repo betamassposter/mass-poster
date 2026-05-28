@@ -1,3 +1,5 @@
+allowBuilds:
+  - ffmpeg-static   # needs install.js to download the ffmpeg binary
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver

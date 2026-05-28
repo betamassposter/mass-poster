@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Mass Poster: generated assets (test reels, voice samples, mock clips)
+/tmp/
+
+# Skills installed locally by `npx skills add` — agent-side only, not part of product
+/.agents/
+skills-lock.json
+
+# Supabase CLI local artifacts
+/supabase/.temp/
+/supabase/.branches/
+

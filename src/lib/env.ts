@@ -50,10 +50,7 @@ const schema = z.object({
 
   // IP reputation providers
   ZEROBOUNCE_API_KEY: z.string().optional(),
-  /** Free tier: ipapi.co / ip-api.com / ipinfo.io — used as a fallback geo/ASN lookup. */
-  IPINFO_TOKEN: z.string().optional(),
-  /** AbuseIPDB free tier — 1000 checks/day, used as a blacklist signal. */
-  ABUSEIPDB_API_KEY: z.string().optional(),
+  // (Note: browserleaks.com is scraped via headless Chromium — no API key.)
 
   // Posting (Blocco 7)
   ZERNIO_API_KEY: z.string().optional(),

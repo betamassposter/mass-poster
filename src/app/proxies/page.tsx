@@ -124,15 +124,16 @@ export default async function ProxiesPage() {
         >
           ZeroBounce IP reputation
         </Link>{' '}
-        +{' '}
+        + real{' '}
         <Link
           href="https://browserleaks.com/ip"
           target="_blank"
           className="text-[color:var(--accent)] hover:underline"
         >
           browserleaks.com/ip
-        </Link>
-        -equivalent server-side fingerprint check.
+        </Link>{' '}
+        scrape via headless Chromium routed through the proxy under test (DNS + WebRTC leak
+        detection included).
       </p>
     </div>
   );

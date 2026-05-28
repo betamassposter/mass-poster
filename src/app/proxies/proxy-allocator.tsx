@@ -105,13 +105,16 @@ export function ProxyAllocator() {
             </Select>
           </Field>
           <div className="surface-elevated rounded-md p-3 text-[11px] text-text-muted">
-            After allocation, every proxy runs through:
+            After allocation, every proxy is routed through:
             <ul className="mt-1.5 space-y-0.5 text-text-secondary">
-              <li>· ZeroBounce IP reputation</li>
-              <li>· ipinfo.io geo + ASN + datacenter detector</li>
-              <li>· AbuseIPDB blacklist (if key set)</li>
+              <li>· ZeroBounce IP reputation API (fraud_score, blacklists, Tor/VPN flags)</li>
+              <li>
+                · browserleaks.com/ip (real scrape via headless Chromium through the proxy —
+                geo, ASN, proxy/hosting flags, blacklists, DNS leak, WebRTC leak)
+              </li>
             </ul>
-            Proxies that don&apos;t come back clean are quarantined — not assigned to accounts.
+            Proxies that don&apos;t come back 100% clean on both sources are quarantined and
+            cannot be bound to accounts in strict mode.
           </div>
         </div>
       </Modal>

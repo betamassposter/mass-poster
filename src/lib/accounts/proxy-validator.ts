@@ -6,14 +6,14 @@ import type {
   ProxyValidationVerdict,
 } from './types.ts';
 import { ZeroBounceIpReputationProvider } from './providers/zerobounce-ip.ts';
-import { IpFingerprintReputationProvider } from './providers/ip-fingerprint.ts';
+import { BrowserleaksIpReputationProvider } from './providers/browserleaks.ts';
 
 /**
  * Two-source reputation gate.
  *
- * Composes ZeroBounce IP reputation + an IP-fingerprint check (server-side
- * equivalent of browserleaks.com/ip checks). A proxy is `clean: true` ONLY if
- * BOTH providers return clean: true.
+ * Composes ZeroBounce IP reputation + browserleaks.com/ip (scraped via a
+ * headless Chromium routed through the proxy under test). A proxy is
+ * `clean: true` ONLY if BOTH providers return clean: true.
  *
  * Behavior depends on env IP_REPUTATION_STRICT:
  *   - true (default): a missing provider key counts as a hard fail.
@@ -32,7 +32,7 @@ export class ProxyValidator {
   constructor(opts?: { providers?: IpReputationProvider[]; strict?: boolean }) {
     this.providers = opts?.providers ?? [
       new ZeroBounceIpReputationProvider(),
-      new IpFingerprintReputationProvider(),
+      new BrowserleaksIpReputationProvider(),
     ];
     this.strict = opts?.strict ?? env.IP_REPUTATION_STRICT;
   }

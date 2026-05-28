@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { ArrowRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Field, Input } from '@/components/ui/input';
 
 export function LoginForm({ returnTo }: { returnTo: string }) {
   const [email, setEmail] = useState('');
@@ -27,10 +30,9 @@ export function LoginForm({ returnTo }: { returnTo: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3">
-      <label className="block text-sm">
-        <span className="block text-zinc-500 mb-1">Email</span>
-        <input
+    <form onSubmit={submit} className="space-y-4">
+      <Field label="Email">
+        <Input
           type="email"
           required
           autoFocus
@@ -38,18 +40,23 @@ export function LoginForm({ returnTo }: { returnTo: string }) {
           onChange={(e) => setEmail(e.target.value)}
           disabled={isPending}
           placeholder="you@example.com"
-          className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2"
         />
-      </label>
-      <button
+      </Field>
+      <Button
         type="submit"
         disabled={isPending || !email}
-        className="w-full rounded bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
+        loading={isPending}
+        variant="accent"
+        size="lg"
+        iconRight={<ArrowRight size={14} />}
+        className="w-full"
       >
-        {isPending ? 'Sending…' : 'Send magic link'}
-      </button>
+        {isPending ? 'Sending magic link…' : 'Send magic link'}
+      </Button>
       {error && (
-        <div className="text-sm text-red-700 dark:text-red-400">{error}</div>
+        <div className="text-xs" style={{ color: 'var(--status-danger)' }}>
+          {error}
+        </div>
       )}
     </form>
   );

@@ -75,39 +75,74 @@ export class PostingScheduler {
   }
 
   /**
-   * Process all due posts (scheduled_at <= now, status='scheduled').
-   * Each is sent to the posting provider; status updated accordingly.
+   * Process all due posts (scheduled_at <= now, status='scheduled' OR
+   * status='failed' AND retries < max_retries AND now() >= next_retry_at).
+   *
+   * Retry policy: exponential backoff (5s, 30s, 5min, 30min, 6h).
+   * After max_retries the post stays 'failed' (treated as dead-letter).
    */
   async tick(limit = 50): Promise<TickResult> {
     const provider = getPostingProvider();
-    const nowIso = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const MAX_RETRIES = 4;
+    // Backoff schedule in ms: 5s, 30s, 5min, 30min, 6h
+    const BACKOFF_SCHEDULE_MS = [5_000, 30_000, 5 * 60_000, 30 * 60_000, 6 * 60 * 60_000];
 
-    const { data: due, error } = await this.supabase
-      .from('post')
-      .select('id, content_id, account_id, caption_variant, hashtags_variant')
-      .eq('workspace_id', this.workspaceId)
-      .eq('status', 'scheduled')
-      .lte('scheduled_at', nowIso)
-      .order('scheduled_at', { ascending: true })
-      .limit(limit);
-    if (error) throw new Error(`Failed to query due posts: ${error.message}`);
+    // 1. Pick due posts: brand-new (status=scheduled) OR retry-eligible failed.
+    //    We query both and merge.
+    const [{ data: newDue, error: newErr }, { data: retryDue, error: retryErr }] = await Promise.all([
+      this.supabase
+        .from('post')
+        .select('id, content_id, account_id, caption_variant, hashtags_variant, retries')
+        .eq('workspace_id', this.workspaceId)
+        .eq('status', 'scheduled')
+        .lte('scheduled_at', nowIso)
+        .order('scheduled_at', { ascending: true })
+        .limit(limit),
+      this.supabase
+        .from('post')
+        .select('id, content_id, account_id, caption_variant, hashtags_variant, retries, error_log')
+        .eq('workspace_id', this.workspaceId)
+        .eq('status', 'failed')
+        .lt('retries', MAX_RETRIES)
+        .order('updated_at', { ascending: true })
+        .limit(limit),
+    ]);
+    if (newErr || retryErr) {
+      throw new Error(`Failed to query due posts: ${(newErr ?? retryErr)?.message}`);
+    }
+
+    // Filter retry-eligible by next_retry_at (computed from error_log + retries)
+    const retryEligible = (retryDue ?? []).filter((p) => {
+      const log = p.error_log as { last_attempt_at?: string } | null;
+      const lastAttempt = log?.last_attempt_at ? new Date(log.last_attempt_at) : null;
+      if (!lastAttempt) return true; // never attempted? treat as ready
+      const waitMs = BACKOFF_SCHEDULE_MS[Math.min(p.retries, BACKOFF_SCHEDULE_MS.length - 1)]!;
+      return now.getTime() - lastAttempt.getTime() >= waitMs;
+    });
+
+    const due = [...(newDue ?? []), ...retryEligible].slice(0, limit);
 
     const result: TickResult = {
-      processed: due?.length ?? 0,
+      processed: due.length,
       published: 0,
       failed: 0,
       details: [],
     };
 
-    for (const post of due ?? []) {
+    for (const post of due) {
+      const currentRetries = (post as { retries: number }).retries ?? 0;
       try {
-        // Mark publishing first (avoid double-pickup on concurrent ticks)
+        // Mark publishing first (avoid double-pickup on concurrent ticks).
+        // We use the post's CURRENT status (scheduled OR failed) as optimistic lock.
+        const previousStatus = (post as { error_log?: unknown }).error_log ? 'failed' : 'scheduled';
         const { error: lockErr } = await this.supabase
           .from('post')
           .update({ status: 'publishing' })
           .eq('id', post.id)
           .eq('workspace_id', this.workspaceId)
-          .eq('status', 'scheduled'); // optimistic lock
+          .eq('status', previousStatus); // optimistic lock
         if (lockErr) throw new Error(`Lock failed: ${lockErr.message}`);
 
         // Load content + account in parallel
@@ -153,6 +188,7 @@ export class PostingScheduler {
             platform_post_url: publishResult.platform_post_url,
             status: publishResult.status,
             published_at: isPublished ? new Date().toISOString() : null,
+            error_log: null, // clear on success
           })
           .eq('id', post.id);
 
@@ -161,18 +197,70 @@ export class PostingScheduler {
       } catch (err) {
         result.failed++;
         const msg = (err as Error).message;
+        const newRetries = currentRetries + 1;
+        const isDeadLetter = newRetries >= MAX_RETRIES;
+        const nextBackoffIdx = Math.min(newRetries, BACKOFF_SCHEDULE_MS.length - 1);
+        const nextRetryMs = BACKOFF_SCHEDULE_MS[nextBackoffIdx]!;
+        const errorLog = {
+          error: msg,
+          last_attempt_at: new Date().toISOString(),
+          next_retry_in_ms: isDeadLetter ? null : nextRetryMs,
+          attempt_history: [
+            // We keep only last 5 attempts to bound log size
+            ...((((post as { error_log?: { attempt_history?: unknown[] } }).error_log
+              ?.attempt_history) ?? []) as unknown[]).slice(-4),
+            {
+              attempt: newRetries,
+              error: msg.slice(0, 200),
+              at: new Date().toISOString(),
+            },
+          ],
+          dead_letter: isDeadLetter,
+        };
         await this.supabase
           .from('post')
           .update({
             status: 'failed',
-            error_log: { error: msg, occurred_at: new Date().toISOString() },
-            retries: 1, // TODO: increment via RPC for exact-once
+            error_log: errorLog,
+            retries: newRetries,
           })
           .eq('id', post.id);
-        result.details.push({ post_id: post.id, status: 'failed', error: msg });
+        result.details.push({
+          post_id: post.id,
+          status: 'failed',
+          error: `${msg}${isDeadLetter ? ' [DEAD LETTER]' : ` (retry ${newRetries}/${MAX_RETRIES} in ${Math.round(nextRetryMs / 1000)}s)`}`,
+        });
       }
     }
     return result;
+  }
+
+  /** List dead-letter posts (failed + retries maxed out) — needs human review. */
+  async listDeadLetter(limit = 20) {
+    const { data, error } = await this.supabase
+      .from('post')
+      .select('id, content_id, account_id, scheduled_at, retries, error_log, updated_at')
+      .eq('workspace_id', this.workspaceId)
+      .eq('status', 'failed')
+      .gte('retries', 4)
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(`Failed to query dead-letter: ${error.message}`);
+    return data ?? [];
+  }
+
+  /** Reset a dead-letter post: zero retries, status=scheduled, scheduled_at=now. */
+  async revivePost(post_id: string) {
+    await this.supabase
+      .from('post')
+      .update({
+        status: 'scheduled',
+        retries: 0,
+        error_log: null,
+        scheduled_at: new Date().toISOString(),
+      })
+      .eq('id', post_id)
+      .eq('workspace_id', this.workspaceId);
   }
 
   /** Cancel a scheduled post (only if status='scheduled'). */

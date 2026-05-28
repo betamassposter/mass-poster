@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { brandConfigSchema, offerSchema } from '../brand/schema.ts';
+import { brandConfigSchema, offerSchema, type BrandConfig } from '../brand/schema.ts';
 import {
   buildBrandVoiceBlock,
   buildIdeationUserPrompt,
@@ -9,6 +9,8 @@ import {
 } from './prompts/blocks.ts';
 import type { TextProvider } from './providers/base.ts';
 import type { GeneratedIdea, IdeationBatch } from './types.ts';
+import { checkQuality, type QualityReport } from './quality-gates.ts';
+import { checkBudget } from './cost-optimizer.ts';
 
 /**
  * Content pipeline (text-only, Blocco 5a).
@@ -36,6 +38,16 @@ export interface PipelineResult {
   cost_eur: number;
   duration_ms: number;
   cache_read_pct: number;
+  /** Quality reports per idea (same order as batch.ideas). */
+  quality_reports: QualityReport[];
+  /** Counts of ideas that passed/warned/rejected. */
+  quality_summary: { passed: number; warned: number; rejected: number };
+  /** Budget guards. */
+  budget?: {
+    spent_this_month_eur: number;
+    remaining_eur: number;
+    warnings: string[];
+  };
 }
 
 export class ContentPipeline {
@@ -113,7 +125,15 @@ export class ContentPipeline {
       extra_context: opts.extra_context,
     });
 
-    // 4. Call provider
+    // 4. Budget pre-flight check
+    const budget = await checkBudget(this.supabase, this.workspaceId);
+    if (!budget.budget_ok) {
+      throw new Error(
+        `Monthly budget exhausted (€${budget.spent_this_month_eur.toFixed(2)} / €${budget.monthly_budget_eur.toFixed(2)}). Increase workspace.monthly_budget_eur to continue.`,
+      );
+    }
+
+    // 5. Call provider
     const result = await this.provider.generateIdeas({
       brand_voice_block,
       offer_block,
@@ -121,6 +141,16 @@ export class ContentPipeline {
       platform: opts.platform,
       count: opts.count,
     });
+
+    // 6. Quality gates — score every idea
+    const quality_reports = result.data.ideas.map((idea) =>
+      checkQuality(idea, brand, { siblings: result.data.ideas }),
+    );
+    const quality_summary = {
+      passed: quality_reports.filter((r) => r.score >= 70).length,
+      warned: quality_reports.filter((r) => r.score >= 50 && r.score < 70).length,
+      rejected: quality_reports.filter((r) => r.score < 50).length,
+    };
 
     const cache_total =
       result.usage.cache_read_input_tokens +
@@ -131,33 +161,39 @@ export class ContentPipeline {
         ? 0
         : Math.round((result.usage.cache_read_input_tokens / cache_total) * 100);
 
-    // 5. Optionally persist to content table
+    // 7. Optionally persist to content table — reject low-score ideas, mark warned ones
     const inserted_content_ids: string[] = [];
     if (opts.persist !== false) {
-      const rows = result.data.ideas.map((idea: GeneratedIdea) => ({
-        workspace_id: this.workspaceId,
-        brand_id: brandRow.id,
-        offer_id: offerRow.id,
-        type: 'reel' as const,
-        status: 'generated' as const,
-        hook: idea.hook,
-        script: null,
-        caption: idea.caption,
-        hashtags: idea.hashtags,
-        assets: { thumbnail_concept: idea.thumbnail_concept },
-        generation_meta: {
-          provider: result.provider,
-          model: result.model,
-          platform: opts.platform,
-          cta_used: idea.cta_used,
-          tokens_in: result.usage.input_tokens,
-          tokens_out: result.usage.output_tokens,
-          cache_read: result.usage.cache_read_input_tokens,
-          cache_create: result.usage.cache_creation_input_tokens,
-          duration_ms: result.duration_ms,
-        },
-        cost_eur: Number((result.usage.cost_eur / opts.count).toFixed(6)),
-      }));
+      const rows = result.data.ideas
+        .map((idea: GeneratedIdea, i: number) => ({ idea, quality: quality_reports[i]! }))
+        .filter(({ quality }) => quality.score >= 50) // drop hard rejects
+        .map(({ idea, quality }) => ({
+          workspace_id: this.workspaceId,
+          brand_id: brandRow.id,
+          offer_id: offerRow.id,
+          type: 'reel' as const,
+          status: (quality.score >= 70 ? 'generated' : 'draft') as 'generated' | 'draft',
+          hook: idea.hook,
+          script: null,
+          caption: idea.caption,
+          hashtags: idea.hashtags,
+          assets: { thumbnail_concept: idea.thumbnail_concept },
+          generation_meta: {
+            provider: result.provider,
+            model: result.model,
+            platform: opts.platform,
+            cta_used: idea.cta_used,
+            tokens_in: result.usage.input_tokens,
+            tokens_out: result.usage.output_tokens,
+            cache_read: result.usage.cache_read_input_tokens,
+            cache_create: result.usage.cache_creation_input_tokens,
+            duration_ms: result.duration_ms,
+            quality_score: quality.score,
+            quality_issues_count: quality.issues.length,
+            quality_brand_voice_alignment: quality.stats.brand_voice_alignment,
+          },
+          cost_eur: Number((result.usage.cost_eur / opts.count).toFixed(6)),
+        }));
 
       const { data: inserted, error: insertErr } = await this.supabase
         .from('content')
@@ -177,6 +213,16 @@ export class ContentPipeline {
       cost_eur: result.usage.cost_eur,
       duration_ms: result.duration_ms,
       cache_read_pct,
+      quality_reports,
+      quality_summary,
+      budget: {
+        spent_this_month_eur: budget.spent_this_month_eur,
+        remaining_eur: budget.remaining_eur,
+        warnings: budget.warnings,
+      },
     };
   }
 }
+
+// Re-export for downstream so callers can import from a single module if desired.
+export type { BrandConfig };

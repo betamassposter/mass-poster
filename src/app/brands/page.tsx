@@ -57,7 +57,7 @@ export default async function BrandsPage() {
           </div>
           <h2 className="text-lg font-semibold">No brands yet</h2>
           <p className="text-sm text-text-muted mt-2 max-w-md mx-auto">
-            Brands define <strong>voice</strong>, <strong>target personas</strong>, and the <strong>offer</strong> you're promoting.
+            Brands define <strong>voice</strong>, <strong>target personas</strong>, and the <strong>offer</strong> you&apos;re promoting.
             Run <code className="font-mono px-1.5 py-0.5 rounded bg-bg-elevated">pnpm brand:seed</code> to create the Maplo demo brand.
           </p>
         </div>

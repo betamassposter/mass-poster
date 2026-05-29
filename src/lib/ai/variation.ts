@@ -1,5 +1,4 @@
 import type { BrandConfig, Persona } from '../brand/schema.ts';
-import type { GeneratedIdea } from './types.ts';
 
 /**
  * Content variation engine — takes 1 seed idea and produces N "natural" variants

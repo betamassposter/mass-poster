@@ -3,8 +3,9 @@ import Link from 'next/link';
 import { getSupabaseAdmin } from '@/lib/db/admin';
 import { CURRENT_WORKSPACE_ID } from '@/lib/db/workspace';
 import { PageHeader } from '@/components/ui/page-header';
-import { Calendar, Copy, Edit3, ExternalLink, Sparkles, Trash2 } from 'lucide-react';
+import { Calendar, ExternalLink, Sparkles } from 'lucide-react';
 import { ContentActions } from './content-actions';
+import { CopyButton } from '@/components/ui/copy-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -336,16 +337,3 @@ function Section({
   );
 }
 
-function CopyButton({ value }: { value: string }) {
-  // Server component — link to client utility for now
-  return (
-    <button
-      className="text-[10px] text-text-muted hover:text-text-secondary flex items-center gap-1 transition-colors"
-      data-copy={value}
-      type="button"
-    >
-      <Copy size={11} />
-      copy
-    </button>
-  );
-}

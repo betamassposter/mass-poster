@@ -1,5 +1,5 @@
 import { mkdirSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ContentPipeline } from './ai/pipeline.ts';
 import { getTextProvider } from './ai/client.ts';

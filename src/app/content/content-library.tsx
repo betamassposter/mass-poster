@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutGrid, List, Calendar, MoreHorizontal } from 'lucide-react';
+import { LayoutGrid, List } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { FilterBar, FilterChip, SearchInput } from '@/components/ui/filter-bar';
 

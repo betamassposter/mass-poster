@@ -2,8 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin } from '@/lib/db/admin';
 import { CURRENT_WORKSPACE_ID } from '@/lib/db/workspace';
 import { KPICard } from '@/components/ui/kpi-card';
-import { Sparkline } from '@/components/ui/sparkline';
-import { AccountStatusPill, PostStatusPill } from '@/components/ui/status-pill';
+import { AccountStatusPill } from '@/components/ui/status-pill';
 import {
   Users,
   Sparkles,
@@ -27,7 +26,7 @@ export default async function Home() {
     { count: accountCount },
     { data: accounts },
     { data: recentContent },
-    { data: recentPosts },
+    ,
     { data: clicksData },
   ] = await Promise.all([
     supabase

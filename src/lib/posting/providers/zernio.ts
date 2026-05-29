@@ -5,7 +5,7 @@ import type {
   PublishRequest,
   PublishResult,
 } from '../types.ts';
-import { env, requireEnv } from '../../env.ts';
+import { requireEnv } from '../../env.ts';
 
 /**
  * Zernio API wrapper.

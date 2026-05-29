@@ -12,32 +12,42 @@ import {
   Webhook,
   KeyRound,
   Plus,
-  Video,
-  Mic,
   Calendar,
-  Zap,
   Activity,
+  Network,
+  Settings,
 } from 'lucide-react';
 
 const NAV = [
   { id: 'home', label: 'Overview', icon: Home, href: '/' },
   { id: 'brands', label: 'Brands', icon: Sparkles, href: '/brands' },
   { id: 'accounts', label: 'Accounts', icon: Users, href: '/accounts' },
+  { id: 'proxies', label: 'Proxies', icon: Network, href: '/proxies' },
   { id: 'content', label: 'Content', icon: FileText, href: '/content' },
+  { id: 'schedule', label: 'Schedule', icon: Calendar, href: '/schedule' },
   { id: 'links', label: 'Tracking Links', icon: LinkIcon, href: '/links' },
   { id: 'activity', label: 'Activity', icon: Activity, href: '/activity' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, href: '/webhooks' },
   { id: 'keys', label: 'API Keys', icon: KeyRound, href: '/api-keys' },
+  { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
 ];
 
-const ACTIONS = [
-  { id: 'gen-content', label: 'Generate content', shortcut: 'G C', icon: Sparkles, action: 'gen-content' },
-  { id: 'gen-reel', label: 'Generate full reel', shortcut: 'G R', icon: Video, action: 'gen-reel' },
-  { id: 'gen-voice', label: 'Test voice synthesis', shortcut: 'G V', icon: Mic, action: 'gen-voice' },
-  { id: 'schedule', label: 'Smart-schedule posts', shortcut: 'S S', icon: Calendar, action: 'schedule' },
-  { id: 'tick', label: 'Process scheduled queue', shortcut: 'P T', icon: Zap, action: 'tick' },
-  { id: 'create-link', label: 'Create tracking link', shortcut: 'C L', icon: LinkIcon, action: 'create-link' },
-  { id: 'create-account', label: 'Create new account', shortcut: 'C A', icon: Plus, action: 'create-account' },
+interface Action {
+  id: string;
+  label: string;
+  shortcut?: string;
+  icon: typeof Plus;
+  href: string;
+}
+
+const ACTIONS: Action[] = [
+  { id: 'create-brand', label: 'Create new brand', shortcut: 'C B', icon: Sparkles, href: '/brands/new' },
+  { id: 'create-account', label: 'Create new account', shortcut: 'C A', icon: Plus, href: '/accounts' },
+  { id: 'allocate-proxy', label: 'Allocate proxies', shortcut: 'A P', icon: Network, href: '/proxies' },
+  { id: 'create-link', label: 'Create tracking link', shortcut: 'C L', icon: LinkIcon, href: '/links' },
+  { id: 'gen-content', label: 'Generate content for a brand', shortcut: 'G C', icon: FileText, href: '/brands' },
+  { id: 'create-key', label: 'Create API key', shortcut: 'C K', icon: KeyRound, href: '/api-keys' },
+  { id: 'create-webhook', label: 'Create webhook', shortcut: 'C W', icon: Webhook, href: '/webhooks' },
 ];
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -115,14 +125,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                     key={item.id}
                     value={`action ${item.label}`}
                     onSelect={() => {
-                      // For now, navigate to action targets; later wire to API
-                      const map: Record<string, string> = {
-                        'gen-content': '/brands',
-                        'gen-reel': '/brands',
-                        'create-link': '/links',
-                        'create-account': '/accounts',
-                      };
-                      router.push(map[item.action] ?? '/');
+                      router.push(item.href);
                       onClose();
                     }}
                     className="

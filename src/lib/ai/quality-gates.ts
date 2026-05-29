@@ -259,7 +259,6 @@ export function checkQuality(
   }
   score = Math.max(0, Math.min(100, score));
 
-  const rejectBelow = options.reject_below ?? 50;
   const passAbove = options.pass_above ?? 70;
   const passed = score >= passAbove;
 

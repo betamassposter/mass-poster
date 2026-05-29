@@ -19,7 +19,7 @@ interface Offer {
 export function LinksActions({
   brands,
   offers,
-  origin,
+  origin: _origin,
 }: {
   brands: Brand[];
   offers: Offer[];

@@ -2,7 +2,6 @@ import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { basename } from 'node:path';
 import type {
   VoiceCloneRequest,
   VoiceCloneResponse,

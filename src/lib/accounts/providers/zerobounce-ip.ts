@@ -127,9 +127,11 @@ export class ZeroBounceIpReputationProvider implements IpReputationProvider {
       };
     }
 
-    const isProxy = parseBool(raw.is_proxy);
     const isVpn = parseBool(raw.is_vpn);
     const isTor = parseBool(raw.is_tor);
+    // Note: raw.is_proxy is intentionally not consumed — mobile proxies WILL
+    // be flagged as proxies on commercial lists; failing on that would be
+    // self-defeating. Downstream callers can read it from `raw` if they want.
     const blacklisted = parseBool(raw.blacklisted);
     const blacklistCount = raw.blacklist_count ?? 0;
     const fraudScore = raw.fraud_score ?? 0;
@@ -175,11 +177,6 @@ export class ZeroBounceIpReputationProvider implements IpReputationProvider {
       raw,
       checked_at: startedAt,
     };
-
-    // (Note: `isProxy` is captured intentionally; downstream consumers can read
-    // it from `raw` if they want to weight it. We don't fail on it because the
-    // whole point of a mobile proxy is that it IS a proxy — failing on that
-    // would be self-defeating.)
   }
 }
 

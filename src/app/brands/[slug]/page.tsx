@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { getSupabaseAdmin } from '@/lib/db/admin';
 import { CURRENT_WORKSPACE_ID } from '@/lib/db/workspace';
 import { GenerateButton } from './generate-button';
-import { ChevronLeft, ExternalLink, Mic, Hash, Users, Award } from 'lucide-react';
+import { ChevronLeft, ExternalLink, Mic, Users, Award } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 

@@ -79,7 +79,7 @@ export function planSchedule(
   const warnings: string[] = [];
   const slots: PlannedSlot[] = [];
   const seed = options.seed ?? Date.now();
-  let rng = mulberry32(seed);
+  const rng = mulberry32(seed);
 
   // Filter healthy + active accounts
   const eligibleAccounts = accounts
@@ -241,6 +241,6 @@ export async function fetchExistingPostsByAccount(
     arr.push(new Date(p.scheduled_at));
     map.set(p.account_id, arr);
   }
-  for (const [k, v] of map) v.sort((a, b) => a.getTime() - b.getTime());
+  for (const v of map.values()) v.sort((a, b) => a.getTime() - b.getTime());
   return map;
 }

@@ -2,18 +2,7 @@ import { getSupabaseAdmin } from '@/lib/db/admin';
 import { CURRENT_WORKSPACE_ID } from '@/lib/db/workspace';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
-import {
-  Activity,
-  Users,
-  Send,
-  Sparkles,
-  AlertCircle,
-  Globe,
-  CheckCircle2,
-  Shield,
-  Bot,
-  Webhook,
-} from 'lucide-react';
+import { Activity, Users, Send, Sparkles, Webhook } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -191,8 +180,9 @@ export default async function ActivityPage() {
         <EmptyState
           icon={Activity}
           title="No activity yet"
-          description="As accounts get created, content gets generated, and posts go live, events show up here as a timeline."
-          cta={{ label: 'Open brands', href: '/brands', variant: 'accent' }}
+          description="Events show up here automatically: account lifecycle (creating → warmup → active), content generation, post lifecycle, webhook deliveries. Create an account or generate content to populate the timeline."
+          cta={{ label: 'Create an account', href: '/accounts', variant: 'accent' }}
+          secondary={{ label: 'Generate content', href: '/brands' }}
         />
       ) : (
         <div className="surface-card">

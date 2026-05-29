@@ -25,7 +25,7 @@ export interface ProviderAttempt<T> {
   skip_if?: () => boolean | Promise<boolean>;
 }
 
-export interface ChainOptions<T> {
+export interface ChainOptions {
   /** Custom predicate: should we try the next provider given this error? Default: always yes. */
   is_retryable?: (error: unknown) => boolean;
   /** Called before each attempt for telemetry. */
@@ -72,7 +72,7 @@ const DEFAULT_RETRYABLE = (err: unknown): boolean => {
 
 export async function tryChain<T>(
   attempts: ProviderAttempt<T>[],
-  options: ChainOptions<T> = {},
+  options: ChainOptions = {},
 ): Promise<AttemptResult<T>> {
   const errors: Array<{ provider: string; error: unknown }> = [];
   const isRetryable = options.is_retryable ?? DEFAULT_RETRYABLE;

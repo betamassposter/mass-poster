@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { headers } from 'next/headers';
 import { getSupabaseAdmin } from '@/lib/db/admin';
 import { CURRENT_WORKSPACE_ID } from '@/lib/db/workspace';

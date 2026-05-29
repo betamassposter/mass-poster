@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, XCircle, Calendar, Trash2 } from 'lucide-react';
+import { CheckCircle2, XCircle, Calendar } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';

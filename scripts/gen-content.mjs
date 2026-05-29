@@ -13,7 +13,6 @@ import { createClient } from '@supabase/supabase-js';
 import { config as loadEnv } from 'dotenv';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { register } from 'node:module';
 
 // Enable on-the-fly TS loading for .ts imports from this .mjs script
 // (Node 22+ has native support; on older versions we'd need tsx).

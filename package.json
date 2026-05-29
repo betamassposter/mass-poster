@@ -30,6 +30,7 @@
     "auth:invite": "node scripts/auth-invite.mjs",
     "account:rescore": "node --experimental-strip-types scripts/health-recompute.mjs",
     "account:warmup": "node --experimental-strip-types scripts/warmup-day.mjs",
+    "multilogin:bootstrap": "node scripts/multilogin-bootstrap.mjs",
     "schedule:auto": "node --experimental-strip-types scripts/smart-schedule.mjs",
     "db:link": "supabase link",
     "db:push": "supabase db push",

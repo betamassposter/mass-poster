@@ -39,9 +39,15 @@ const schema = z.object({
   IPROYAL_API_KEY: z.string().optional(),
 
   // Multilogin Cloud Phones + Mobile Proxies (pivot 2026-05-28)
+  // Cloud API for profile management + Local Launcher for browser lifecycle.
+  // See [[reference-multilogin-api]] for the verified endpoint shapes.
   MULTILOGIN_API_BASE: z.url().default('https://api.multilogin.com'),
+  MULTILOGIN_LAUNCHER_BASE: z.url().default('https://launcher.mlx.yt:45001'),
+  /** Long-lived automation token from POST /workspace/automation_token. */
   MULTILOGIN_API_TOKEN: z.string().optional(),
   MULTILOGIN_WORKSPACE_ID: z.string().optional(),
+  /** Default folder to drop newly-created profiles into. Get from GET /workspace/folders. */
+  MULTILOGIN_FOLDER_ID: z.string().optional(),
   /** When true (default), a proxy that fails reputation gating cannot be assigned. */
   IP_REPUTATION_STRICT: z
     .union([z.literal('true'), z.literal('false')])

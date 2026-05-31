@@ -96,17 +96,33 @@ const schema = z.object({
 
 type Env = z.infer<typeof schema>;
 
+let cached: Env | undefined;
+
 function load(): Env {
+  if (cached) return cached;
   const parsed = schema.safeParse(process.env);
   if (!parsed.success) {
     console.error('❌ Invalid environment variables:');
     console.error(z.prettifyError(parsed.error));
     throw new Error('Environment validation failed. Check .env.local against .env.example.');
   }
-  return parsed.data;
+  cached = parsed.data;
+  return cached;
 }
 
-export const env: Env = load();
+/**
+ * Lazy proxy: validation runs on first property access, not at module load.
+ *
+ * Why: Next.js build (Docker on Render) collects page data without runtime
+ * env vars set. If env.ts validated on import, the build would crash on
+ * required vars like NEXT_PUBLIC_SUPABASE_URL even though that path never
+ * actually executes at build time. The proxy defers validation to first use.
+ */
+export const env: Env = new Proxy({} as Env, {
+  get(_target, prop) {
+    return load()[prop as keyof Env];
+  },
+}) as Env;
 
 /** Guard helper per blocchi non ancora abilitati. */
 export function requireEnv<K extends keyof Env>(key: K): NonNullable<Env[K]> {

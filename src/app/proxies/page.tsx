@@ -34,7 +34,7 @@ export default async function ProxiesPage() {
       <PageHeader
         eyebrow="Infrastructure"
         title="Proxy pool"
-        description="Mobile proxies (Multilogin) with IP reputation gating. Only `clean` proxies can be bound to new accounts."
+        description="Mobile proxies allocated in Multilogin, validated here. Click Add proxy → paste credentials → Mass Poster runs the IP reputation gate (AbuseIPDB + browserleaks scrape) BEFORE marking the proxy usable. Only `clean` proxies can bind to accounts."
         actions={<ProxyAllocator />}
       />
 

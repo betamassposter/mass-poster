@@ -43,8 +43,19 @@ const schema = z.object({
   // See [[reference-multilogin-api]] for the verified endpoint shapes.
   MULTILOGIN_API_BASE: z.url().default('https://api.multilogin.com'),
   MULTILOGIN_LAUNCHER_BASE: z.url().default('https://launcher.mlx.yt:45001'),
-  /** Long-lived automation token from POST /workspace/automation_token. */
+  /**
+   * Signin token (or, if it ever comes back to REST, automation_token).
+   * Lifetime ~1h. The provider auto-refreshes via MULTILOGIN_EMAIL/PASSWORD
+   * when this expires.
+   */
   MULTILOGIN_API_TOKEN: z.string().optional(),
+  /**
+   * Account email — used to re-signin when MULTILOGIN_API_TOKEN expires.
+   * Multilogin's POST /workspace/automation_token returns HTTP 501 in REST
+   * mode as of 2026-06-01, so signin + auto-refresh is our only path.
+   */
+  MULTILOGIN_EMAIL: z.string().optional(),
+  MULTILOGIN_PASSWORD: z.string().optional(),
   MULTILOGIN_WORKSPACE_ID: z.string().optional(),
   /** Default folder to drop newly-created profiles into. Get from GET /workspace/folders. */
   MULTILOGIN_FOLDER_ID: z.string().optional(),
@@ -55,6 +66,11 @@ const schema = z.object({
     .transform((v) => v === 'true'),
 
   // IP reputation providers
+  // AbuseIPDB: real abuse reports (community-reported, ~1k/day free). See
+  // [[reference-ip-reputation-vendors]] for why we picked it over ZeroBounce.
+  ABUSEIPDB_API_KEY: z.string().optional(),
+  // ZeroBounce has NO public IP reputation API (their /ip-reputation-checker is
+  // a web tool only). Key kept for future email-warmup use (Blocco 3).
   ZEROBOUNCE_API_KEY: z.string().optional(),
   // (Note: browserleaks.com is scraped via headless Chromium — no API key.)
 

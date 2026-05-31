@@ -1,17 +1,21 @@
 import { env } from '../env.ts';
+import { logger } from '../log.ts';
 import type {
   IpReputationProvider,
   IpReputationResult,
   ProxyCredential,
   ProxyValidationVerdict,
 } from './types.ts';
-import { ZeroBounceIpReputationProvider } from './providers/zerobounce-ip.ts';
+import { AbuseIpdbReputationProvider } from './providers/abuseipdb.ts';
 import { BrowserleaksIpReputationProvider } from './providers/browserleaks.ts';
+import { readCached, writeCached } from './ip-reputation-cache.ts';
+
+const log = logger('accounts/proxy-validator');
 
 /**
  * Two-source reputation gate.
  *
- * Composes ZeroBounce IP reputation + browserleaks.com/ip (scraped via a
+ * Composes AbuseIPDB IP reputation + browserleaks.com/ip (scraped via a
  * headless Chromium routed through the proxy under test). A proxy is
  * `clean: true` ONLY if BOTH providers return clean: true.
  *
@@ -31,7 +35,7 @@ export class ProxyValidator {
 
   constructor(opts?: { providers?: IpReputationProvider[]; strict?: boolean }) {
     this.providers = opts?.providers ?? [
-      new ZeroBounceIpReputationProvider(),
+      new AbuseIpdbReputationProvider(),
       new BrowserleaksIpReputationProvider(),
     ];
     this.strict = opts?.strict ?? env.IP_REPUTATION_STRICT;
@@ -43,7 +47,18 @@ export class ProxyValidator {
    */
   async validate(
     proxy: ProxyCredential,
-    opts?: { expectedCountry?: string; reason?: string },
+    opts?: {
+      expectedCountry?: string;
+      reason?: string;
+      /**
+       * When provided, results are cached per `(workspace_id, provider, ip)`
+       * with a 24h TTL (see [[reference-ip-reputation-vendors]] for why
+       * AbuseIPDB's 1000/day free tier makes this worth doing).
+       */
+      workspace_id?: string;
+      /** Force a fresh check, ignore cache. Default: false. */
+      bypass_cache?: boolean;
+    },
   ): Promise<ProxyValidationVerdict> {
     const startedAt = new Date().toISOString();
     const start = Date.now();
@@ -93,18 +108,43 @@ export class ProxyValidator {
       };
     }
 
+    const useCache = Boolean(opts?.workspace_id) && !opts?.bypass_cache;
+
     const results: IpReputationResult[] = await Promise.all(
-      runnable.map((p) =>
-        p
-          .check(ip, { proxy, expectedCountry: opts?.expectedCountry })
-          .catch((err): IpReputationResult => ({
+      runnable.map(async (p) => {
+        if (useCache && opts?.workspace_id) {
+          const cached = await readCached({
+            workspace_id: opts.workspace_id,
+            provider: p.name,
+            ip,
+          });
+          if (cached) {
+            log.debug('cache hit', { provider: p.name, ip });
+            return cached;
+          }
+        }
+        try {
+          const fresh = await p.check(ip, {
+            proxy,
+            expectedCountry: opts?.expectedCountry,
+          });
+          if (useCache && opts?.workspace_id) {
+            await writeCached(
+              { workspace_id: opts.workspace_id, provider: p.name, ip },
+              fresh,
+            );
+          }
+          return fresh;
+        } catch (err) {
+          return {
             provider: p.name,
             ip,
             clean: false,
             signals: { notes: [`provider error: ${(err as Error).message}`] },
             checked_at: new Date().toISOString(),
-          })),
-      ),
+          };
+        }
+      }),
     );
 
     const allClean = results.every((r) => r.clean);

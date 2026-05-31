@@ -1,0 +1,65 @@
+# Render deploy config — https://render.com/docs/blueprint-spec
+#
+# Connect this repo to Render, hit "Apply Blueprint", and Render reads this
+# file to provision the service. Env vars marked `sync: false` must be set
+# manually in the Render UI before the first deploy.
+
+services:
+  - type: web
+    name: mass-poster
+    runtime: docker
+    plan: free
+    region: frankfurt # closest to Supabase eu-central-1
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /login
+    autoDeploy: true
+    envVars:
+      # ─── Required ────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: APP_URL
+        sync: false # set to https://mass-poster.onrender.com after first deploy
+
+      # ─── AI providers ────────────────────────────────────
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FAL_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+
+      # ─── Multilogin (Block 4) ────────────────────────────
+      - key: MULTILOGIN_EMAIL
+        sync: false
+      - key: MULTILOGIN_PASSWORD
+        sync: false
+      - key: MULTILOGIN_API_TOKEN
+        sync: false
+      - key: MULTILOGIN_WORKSPACE_ID
+        sync: false
+      - key: MULTILOGIN_FOLDER_ID
+        sync: false
+
+      # ─── IP reputation gate ──────────────────────────────
+      - key: ABUSEIPDB_API_KEY
+        sync: false
+      - key: IP_REPUTATION_STRICT
+        value: 'true'
+
+      # ─── Email warmup (parked) ───────────────────────────
+      - key: ZEROBOUNCE_API_KEY
+        sync: false
+
+      # ─── Posting (Block 7 — set when keys arrive) ────────
+      - key: ZERNIO_API_KEY
+        sync: false
+      - key: BROWSER_USE_API_KEY
+        sync: false

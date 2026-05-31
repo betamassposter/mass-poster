@@ -118,11 +118,11 @@ export default async function ProxiesPage() {
       <p className="text-[11px] text-text-faint">
         Gate sources:{' '}
         <Link
-          href="https://www.zerobounce.net/ip-reputation-checker"
+          href="https://www.abuseipdb.com/check"
           target="_blank"
           className="text-[color:var(--accent)] hover:underline"
         >
-          ZeroBounce IP reputation
+          AbuseIPDB reputation
         </Link>{' '}
         + real{' '}
         <Link

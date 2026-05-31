@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck · Lint · Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # env.ts validates required Supabase keys at import time, so tests
+      # need a stub `.env.local`. Real secrets are NOT used in CI — the
+      # tests mock fetch and never hit Supabase or vendor APIs.
+      - name: Write stub .env.local for tests
+        run: |
+          cat > .env.local <<'EOF'
+          NODE_ENV=development
+          NEXT_PUBLIC_SUPABASE_URL=https://stub.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-stub-anon-key-must-be-20-chars-or-more-long
+          SUPABASE_SERVICE_ROLE_KEY=ci-stub-service-role-key-must-be-20-chars-or-more-long
+          EOF
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test

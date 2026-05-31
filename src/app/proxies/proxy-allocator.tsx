@@ -107,7 +107,7 @@ export function ProxyAllocator() {
           <div className="surface-elevated rounded-md p-3 text-[11px] text-text-muted">
             After allocation, every proxy is routed through:
             <ul className="mt-1.5 space-y-0.5 text-text-secondary">
-              <li>· ZeroBounce IP reputation API (fraud_score, blacklists, Tor/VPN flags)</li>
+              <li>· AbuseIPDB reputation API (abuse score, community reports, Tor flag)</li>
               <li>
                 · browserleaks.com/ip (real scrape via headless Chromium through the proxy —
                 geo, ASN, proxy/hosting flags, blacklists, DNS leak, WebRTC leak)

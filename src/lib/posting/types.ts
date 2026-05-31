@@ -36,6 +36,19 @@ export interface PublishRequest {
   scheduled_at?: string;
   /** Optional first comment (IG/TT trick to keep hashtags out of caption). */
   first_comment?: string;
+  /**
+   * Dry-run mode. Provider validates the request shape but does NOT make any
+   * network call to the platform. Returns a fake provider_post_id prefixed
+   * `dry-run-…`. Use this to rehearse the full scheduler pipeline before any
+   * real account is at risk.
+   */
+  dry_run?: boolean;
+  /**
+   * Idempotency key. If the provider has already seen this key, it returns
+   * the previous result instead of re-publishing. Recommended on every call
+   * from the scheduler (use `post.id` as the key).
+   */
+  idempotency_key?: string;
 }
 
 export interface PublishResult {
@@ -70,6 +83,24 @@ export interface ScheduleRequest {
   caption_variant?: string;
   /** Per-account variant of hashtags. */
   hashtags_variant?: string[];
+  /**
+   * Client-generated UUID. If a post row already exists with this key, the
+   * scheduler returns it instead of inserting a duplicate. Critical for any
+   * batch scheduler that may retry on transient DB errors.
+   */
+  idempotency_key?: string;
+}
+
+export interface TickOptions {
+  /**
+   * When true, run the full tick flow but pass dry_run=true to each provider
+   * publish() call. Posts get a fake provider_post_id `dry-run-…` so the row
+   * is distinguishable from a real publish. Use to rehearse the scheduler
+   * pipeline against real DB state without any platform-side side effect.
+   */
+  dry_run?: boolean;
+  /** Override the upper bound for "now" (testing). */
+  now?: Date;
 }
 
 export interface TickResult {

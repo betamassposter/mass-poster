@@ -74,12 +74,15 @@ if (!shortToken) {
 console.log('    short-lived token:', shortToken.slice(0, 20) + '…');
 console.log('');
 
-// Step 2: generate automation token (long-lived)
+// Step 2: generate automation token (long-lived).
+// Multilogin's /workspace/automation_token returns HTTP 400 "unparsable
+// request body" when body is omitted. Empty {} satisfies the body parser
+// even though the only required value is in the query string.
 console.log(`2/4  Generate automation token (expires in ${expirationPeriod}) …`);
 const autoData = await call(
   'POST',
   `/workspace/automation_token?expiration_period=${encodeURIComponent(expirationPeriod)}`,
-  undefined,
+  {},
   shortToken,
 );
 const autoToken = autoData?.token ?? autoData;

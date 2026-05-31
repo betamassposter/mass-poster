@@ -220,7 +220,7 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
             if (cells.length >= 1) {
               const ipText = textOf(cells[0]);
               const ipMatch = /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/.exec(ipText);
-              if (ipMatch) {
+              if (ipMatch && ipMatch[1]) {
                 ips.push({
                   ip: ipMatch[1],
                   country: cells[1] ? textOf(cells[1]) : undefined,

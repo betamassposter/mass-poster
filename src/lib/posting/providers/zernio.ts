@@ -75,6 +75,16 @@ export class ZernioProvider implements PostingProviderInterface {
   }
 
   async publish(req: PublishRequest): Promise<PublishResult> {
+    // Dry-run short-circuit: don't hit Zernio at all. Returns a fake provider
+    // id so the scheduler can persist a posting_record row that's distinguishable
+    // from a real publish.
+    if (req.dry_run) {
+      return {
+        provider_post_id: `dry-run-${req.idempotency_key ?? Math.random().toString(36).slice(2, 10)}`,
+        platform_post_url: null,
+        status: 'scheduled',
+      };
+    }
     const body: ZernioPostBody = {
       account_id: req.platform_account_id,
       platforms: [req.platform],
@@ -84,7 +94,11 @@ export class ZernioProvider implements PostingProviderInterface {
       scheduled_at: req.scheduled_at,
       first_comment: req.first_comment,
     };
-    const res = await this.request<ZernioPostResponse>('POST', '/posts', body);
+    // Zernio supports the standard `Idempotency-Key` header convention. Pass
+    // it through so retries (e.g. scheduler tick re-running on a row already
+    // submitted) don't create duplicate posts.
+    const extraHeaders = req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : undefined;
+    const res = await this.request<ZernioPostResponse>('POST', '/posts', body, extraHeaders);
     return this.map(res);
   }
 
@@ -115,12 +129,14 @@ export class ZernioProvider implements PostingProviderInterface {
     method: 'GET' | 'POST' | 'DELETE',
     path: string,
     body?: unknown,
+    extraHeaders?: Record<string, string>,
   ): Promise<T> {
     const init: RequestInit = {
       method,
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
+        ...extraHeaders,
       },
     };
     if (body !== undefined) init.body = JSON.stringify(body);

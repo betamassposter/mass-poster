@@ -60,6 +60,7 @@ export class AccountOrchestrator {
       const verdict = await validator.validate(p, {
         expectedCountry: country,
         reason: 'initial_allocation',
+        workspace_id: this.workspaceId,
       });
 
       const { data: row, error } = await this.supabase
@@ -133,7 +134,13 @@ export class AccountOrchestrator {
         country: row.country ?? undefined,
         provider: row.provider,
       },
-      { expectedCountry: row.country ?? undefined, reason },
+      {
+        expectedCountry: row.country ?? undefined,
+        reason,
+        workspace_id: this.workspaceId,
+        // Manual re-validation = user suspects something changed → fresh fetch.
+        bypass_cache: reason === 'manual',
+      },
     );
 
     await this.supabase
@@ -180,6 +187,30 @@ export class AccountOrchestrator {
     if (req.workspace_id !== this.workspaceId) {
       throw new Error('Workspace mismatch — orchestrator scoped to a single workspace');
     }
+
+    // Idempotency short-circuit: if we already produced an account for this
+    // key in this workspace, return it instead of creating duplicates +
+    // burning a Multilogin profile + proxy binding.
+    if (req.idempotency_key) {
+      const { data: existing } = await this.supabase
+        .from('account')
+        .select('id, handle, status, multilogin_profile_id, cloud_phone_id, proxy_id')
+        .eq('workspace_id', this.workspaceId)
+        .eq('idempotency_key', req.idempotency_key)
+        .maybeSingle();
+      if (existing) {
+        return {
+          account_id: existing.id,
+          handle: existing.handle,
+          status: existing.status as AccountStatus,
+          profile_id: existing.multilogin_profile_id ?? '',
+          profile_provider: 'multilogin',
+          cloud_phone_id: existing.cloud_phone_id ?? undefined,
+          proxy_id: existing.proxy_id ?? null,
+        };
+      }
+    }
+
     const antidetect = await getAntidetectProvider();
 
     // 1) Pick proxy
@@ -244,6 +275,7 @@ export class AccountOrchestrator {
         proxy_id: proxyRow?.id ?? null,
         status: 'creating' as AccountStatus,
         origin: req.origin ?? 'manual',
+        idempotency_key: req.idempotency_key ?? null,
         health_score: 100,
         daily_post_cap: 5,
       })

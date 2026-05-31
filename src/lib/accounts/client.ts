@@ -3,6 +3,7 @@ import { AdsPowerProvider } from './providers/adspower.ts';
 import { MockAntidetectProvider } from './providers/mock-antidetect.ts';
 import { MockProxyProvider } from './providers/mock-proxy.ts';
 import { MultiloginCloudPhoneProvider } from './providers/multilogin.ts';
+import { MultiloginMockProvider } from './providers/multilogin-mock.ts';
 import { MultiloginMobileProxyProvider } from './providers/multilogin-proxy.ts';
 import type { AntidetectProvider, ProxyProvider } from './types.ts';
 
@@ -21,10 +22,12 @@ import type { AntidetectProvider, ProxyProvider } from './types.ts';
 export async function getAntidetectProvider(): Promise<AntidetectProvider> {
   const override = process.env.ANTIDETECT_PROVIDER as
     | 'multilogin'
+    | 'multilogin-mock'
     | 'adspower'
     | 'mock'
     | undefined;
   if (override === 'mock') return new MockAntidetectProvider();
+  if (override === 'multilogin-mock') return new MultiloginMockProvider();
   if (override === 'multilogin') return new MultiloginCloudPhoneProvider();
   if (override === 'adspower') return new AdsPowerProvider();
 

@@ -35,6 +35,17 @@ export class PostingScheduler {
 
   /** Create a scheduled post row (no posting yet — happens on tick()). */
   async schedule(req: ScheduleRequest) {
+    // Idempotency short-circuit
+    if (req.idempotency_key) {
+      const { data: existing } = await this.supabase
+        .from('post')
+        .select('id, scheduled_at')
+        .eq('workspace_id', this.workspaceId)
+        .eq('idempotency_key', req.idempotency_key)
+        .maybeSingle();
+      if (existing) return existing;
+    }
+
     // Verify the content + account exist and belong to this workspace
     const { data: content } = await this.supabase
       .from('content')
@@ -69,6 +80,7 @@ export class PostingScheduler {
         posting_provider: provider.name as PostingProvider,
         caption_variant: req.caption_variant ?? null,
         hashtags_variant: req.hashtags_variant ?? null,
+        idempotency_key: req.idempotency_key ?? null,
       })
       .select('id, scheduled_at')
       .single();
@@ -83,8 +95,9 @@ export class PostingScheduler {
    * Retry policy: exponential backoff (5s, 30s, 5min, 30min, 6h).
    * After max_retries the post stays 'failed' (treated as dead-letter).
    */
-  async tick(limit = 50): Promise<TickResult> {
+  async tick(limit = 50, opts?: { dry_run?: boolean }): Promise<TickResult> {
     const provider = getPostingProvider();
+    const dryRun = opts?.dry_run ?? false;
     const now = new Date();
     const nowIso = now.toISOString();
     const MAX_RETRIES = 4;
@@ -180,7 +193,8 @@ export class PostingScheduler {
           account.platform as Platform,
         );
 
-        // Publish
+        // Publish (dry_run propagated from tick options, idempotency_key
+        // derived from post.id so re-tick of the same row is safe).
         const publishResult = await provider.publish({
           platform_account_id: platformAccountId,
           platform: account.platform as Platform,
@@ -188,6 +202,8 @@ export class PostingScheduler {
           caption: clean_caption,
           hashtags,
           first_comment,
+          dry_run: dryRun,
+          idempotency_key: post.id,
         });
 
         // Update row with provider id + status

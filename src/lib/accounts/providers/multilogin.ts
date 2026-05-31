@@ -98,6 +98,10 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
   private token: string | undefined;
   private folderId: string | undefined;
   private workspaceId: string | undefined;
+  private email: string | undefined;
+  private password: string | undefined;
+  /** Re-entrancy guard so a 401 retry doesn't recurse forever. */
+  private refreshing = false;
 
   constructor(opts?: {
     cloudBase?: string;
@@ -105,23 +109,44 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
     token?: string;
     workspaceId?: string;
     folderId?: string;
+    email?: string;
+    password?: string;
   }) {
     this.cloudBase = opts?.cloudBase ?? env.MULTILOGIN_API_BASE ?? DEFAULT_CLOUD_BASE;
     this.launcherBase = opts?.launcherBase ?? env.MULTILOGIN_LAUNCHER_BASE ?? DEFAULT_LAUNCHER_BASE;
     this.token = opts?.token ?? env.MULTILOGIN_API_TOKEN;
     this.workspaceId = opts?.workspaceId ?? env.MULTILOGIN_WORKSPACE_ID;
     this.folderId = opts?.folderId ?? env.MULTILOGIN_FOLDER_ID;
+    this.email = opts?.email ?? env.MULTILOGIN_EMAIL;
+    this.password = opts?.password ?? env.MULTILOGIN_PASSWORD;
   }
 
   async isReady(): Promise<boolean> {
-    if (!this.token) return false;
+    if (!this.token && !(this.email && this.password)) return false;
     try {
-      // Hit a cheap authenticated endpoint to confirm token validity.
-      // GET /workspace returns the list of workspaces for the token owner.
-      const res = await this.cloudRequest<unknown>('GET', '/workspace');
+      // /workspace returns 403 on Pro plan; /workspace/folders works with a
+      // valid signin token and is cheap.
+      const res = await this.cloudRequest<unknown>('GET', '/workspace/folders');
       return Boolean(res);
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Re-signin with cached email/password when the current token is rejected.
+   * Returns true if a fresh token was obtained.
+   */
+  private async refreshToken(): Promise<boolean> {
+    if (this.refreshing || !this.email || !this.password) return false;
+    this.refreshing = true;
+    try {
+      await this.signin(this.email, this.password);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      this.refreshing = false;
     }
   }
 
@@ -330,11 +355,10 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
   }
 
   private requireToken(): void {
-    if (!this.token) {
+    if (!this.token && !(this.email && this.password)) {
       throw new Error(
-        'MULTILOGIN_API_TOKEN missing. Set it in .env.local. ' +
-          'Run `pnpm multilogin:token` (or call provider.signin() then provider.generateAutomationToken()) ' +
-          'to obtain a long-lived automation token.',
+        'Multilogin auth missing: set MULTILOGIN_API_TOKEN or MULTILOGIN_EMAIL + MULTILOGIN_PASSWORD ' +
+          'in .env.local. The signin token lifetime is ~1h; with email/password the provider auto-refreshes.',
       );
     }
   }
@@ -343,7 +367,7 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown,
-    opts?: { skipAuth?: boolean },
+    opts?: { skipAuth?: boolean; _isRetry?: boolean },
   ): Promise<T> {
     const url = path.startsWith('http') ? path : `${this.cloudBase}${path}`;
     const headers: Record<string, string> = {
@@ -360,6 +384,18 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
       res = await fetch(url, init);
     } catch (err) {
       throw new Error(`Multilogin cloud API unreachable: ${(err as Error).message}`);
+    }
+    // 401 / "Wrong JWT token" → token expired. Refresh once and retry.
+    if (
+      !opts?.skipAuth &&
+      !opts?._isRetry &&
+      (res.status === 401 || res.status === 403) &&
+      (this.email && this.password)
+    ) {
+      const refreshed = await this.refreshToken();
+      if (refreshed) {
+        return this.cloudRequest<T>(method, path, body, { ...opts, _isRetry: true });
+      }
     }
     const text = await res.text();
     let envelope: MultiloginEnvelope<T> | T | null = null;

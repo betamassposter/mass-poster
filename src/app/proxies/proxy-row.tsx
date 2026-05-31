@@ -220,7 +220,7 @@ function ValidationBadge({ status }: { status: string }) {
       icon: AlertTriangle,
     },
   };
-  const c = config[status] ?? config.pending;
+  const c = (config[status] ?? config.pending)!;
   const Icon = c.icon;
   return (
     <span

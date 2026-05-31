@@ -122,7 +122,7 @@ export interface ProxyProvider {
 
 // ─────────────────────────────────────────────────────────────
 // IP reputation provider — runs BEFORE a proxy is bound to an account.
-// Multiple providers are composed (zerobounce + browserleaks-style fingerprint).
+// Multiple providers are composed (abuseipdb + browserleaks-style fingerprint).
 // A proxy is only `clean` if ALL providers return clean: true.
 // ─────────────────────────────────────────────────────────────
 
@@ -149,7 +149,7 @@ export interface IpReputationSignals {
 }
 
 export interface IpReputationResult {
-  /** Provider that produced this result (e.g. 'zerobounce', 'ip-fingerprint'). */
+  /** Provider that produced this result (e.g. 'abuseipdb', 'browserleaks'). */
   provider: string;
   /** IP that was checked. */
   ip: string;
@@ -211,6 +211,13 @@ export interface CreateAccountRequest {
   origin?: AccountOrigin;
   /** ISO country code for proxy + fingerprint match. Default 'IT'. */
   country?: string;
+  /**
+   * Client-generated UUID. If the orchestrator has already produced an
+   * account row with this key (in this workspace), it returns that row
+   * instead of creating a new account + Multilogin profile + proxy binding.
+   * Send a fresh UUID per logical request; reuse on retry of the same request.
+   */
+  idempotency_key?: string;
 }
 
 export interface CreateAccountResult {

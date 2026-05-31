@@ -50,8 +50,10 @@ const DEFAULT_LAUNCHER_BASE = 'https://launcher.mlx.yt:45001';
 const LAUNCHER_API_V2 = '/api/v2';
 const LAUNCHER_API_V1 = '/api/v1';
 
-/** Default browser core version — bump as Multilogin rolls out new cores. */
-const DEFAULT_CORE_VERSION = 124;
+/** Default browser core version — bump as Multilogin rolls out new cores.
+ * Verified 2026-06-01: anything below 143 returns
+ *   "Can't set core older than 143. Please set higher core version". */
+const DEFAULT_CORE_VERSION = 143;
 
 interface MultiloginEnvelope<T> {
   status: { http_code: number; message?: string; error_code?: string };
@@ -66,8 +68,9 @@ interface SigninResponse {
 }
 
 interface ProfileCreateResponse {
-  /** Field name confirmed at first real call — likely `id` or `uuid`. */
-  id: string;
+  /** Multilogin returns `data: { ids: [uuid] }` on success (verified 2026-06-01). */
+  ids?: string[];
+  id?: string;
   uuid?: string;
   name?: string;
   folder_id?: string;
@@ -208,11 +211,12 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
       '/profile/create',
       body,
     );
-    if (!data?.id && !data?.uuid) {
+    const profileId = data?.ids?.[0] ?? data?.uuid ?? data?.id;
+    if (!profileId) {
       throw new Error(`Profile create returned no id. Response: ${JSON.stringify(data)}`);
     }
     return {
-      profile_id: data.uuid ?? data.id,
+      profile_id: profileId,
       name: spec.name,
       provider: this.name,
       proxy: spec.proxy,
@@ -222,11 +226,14 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
   async listProfiles(): Promise<BrowserProfile[]> {
     this.requireToken();
     if (!this.folderId) return [];
+    // /profile/search requires `search_text` (verified 2026-06-01). Empty string
+    // matches all profiles in the folder.
     const data = await this.cloudRequest<{ profiles?: ProfileSearchItem[] }>(
       'POST',
       '/profile/search',
       {
         folder_id: this.folderId,
+        search_text: '',
         limit: 100,
         offset: 0,
       },

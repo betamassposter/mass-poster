@@ -15,6 +15,12 @@ const PUBLIC_PREFIXES = ['/login', '/auth', '/l/', '/_next', '/favicon'];
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // DEV BYPASS: skip auth entirely when DISABLE_AUTH=true (used to bypass
+  // Supabase magic-link email rate limits during early dogfood).
+  if (process.env.DISABLE_AUTH === 'true') {
+    return NextResponse.next();
+  }
+
   // Public routes (and static / framework paths) skip auth check.
   if (PUBLIC_PREFIXES.some((p) => pathname === p.replace(/\/$/, '') || pathname.startsWith(p))) {
     return NextResponse.next();

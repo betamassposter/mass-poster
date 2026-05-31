@@ -46,7 +46,21 @@ export interface AuthSession {
   workspace_ids: string[];
 }
 
+/**
+ * DEV BYPASS: when DISABLE_AUTH=true is set, getSession + requireSession both
+ * return a fake session anchored to the default workspace. Used to skip
+ * Supabase magic-link email rate limits during early dogfood. Never set on
+ * a production deploy with real user data.
+ */
+const FAKE_SESSION: AuthSession = {
+  user_id: '00000000-0000-0000-0000-000000000001',
+  email: 'dev@local',
+  workspace_ids: ['11111111-1111-1111-1111-111111111111'],
+};
+
 export async function getSession(): Promise<AuthSession | null> {
+  if (process.env.DISABLE_AUTH === 'true') return FAKE_SESSION;
+
   const supabase = await getSupabaseRouteClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -65,6 +79,7 @@ export async function getSession(): Promise<AuthSession | null> {
 }
 
 export async function requireSession(returnTo?: string): Promise<AuthSession> {
+  if (process.env.DISABLE_AUTH === 'true') return FAKE_SESSION;
   const session = await getSession();
   if (!session) {
     const qs = returnTo

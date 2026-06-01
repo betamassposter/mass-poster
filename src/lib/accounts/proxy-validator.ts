@@ -35,14 +35,15 @@ export class ProxyValidator {
   private strict: boolean;
 
   constructor(opts?: { providers?: IpReputationProvider[]; strict?: boolean }) {
-    // Default dual-source gate: AbuseIPDB (community abuse score) + Proxycheck
-    // (proxy/VPN/datacenter classification). Both API-based, work for all
-    // proxy types including SOCKS5+auth. BrowserleaksIpReputationProvider is
-    // kept available for cases where browser-side leak detection matters
-    // (HTTP proxies, no auth) — opt in by passing it to opts.providers.
+    // Dual-source IP gate (the original architecture, restored):
+    //   1. AbuseIPDB — community-reported abuse + Tor flag + blacklists
+    //   2. browserleaks scrape — real Chromium routed through the proxy under
+    //      test (incl. SOCKS5+auth via the in-process bridge). Catches geo,
+    //      ASN classification, proxy/hosting flags, DNS leak, WebRTC leak.
+    // ProxycheckProvider is available as a 3rd source if needed via opts.providers.
     this.providers = opts?.providers ?? [
       new AbuseIpdbReputationProvider(),
-      new ProxycheckProvider(),
+      new BrowserleaksIpReputationProvider(),
     ];
     this.strict = opts?.strict ?? env.IP_REPUTATION_STRICT;
   }

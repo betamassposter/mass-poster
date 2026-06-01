@@ -131,46 +131,66 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
       const isSocks5Auth =
         opts.proxy.type === 'socks5' && !!opts.proxy.username && !!opts.proxy.password;
       if (isSocks5Auth) {
-        // Custom in-process HTTP CONNECT → SOCKS5 bridge.
+        // In-process HTTP-CONNECT → SOCKS5+auth bridge.
         //
-        // proxy-chain v3 fails inside Render's container (probably Node 22 +
-        // IPv6 loopback handling differences). We build the bridge ourselves
-        // with node:http + the `socks` package (already transitively installed
-        // via socks-proxy-agent). Full control over listen interface.
-        const [{ createServer }, { SocksClient }] = await Promise.all([
+        // Chromium doesn't speak SOCKS5+auth (crbug.com/256785). The bridge:
+        //   1. Listens on 127.0.0.1:rand as a plain HTTP CONNECT proxy
+        //   2. On each CONNECT, opens the upstream via socks-proxy-agent
+        //      (which is the ONE SOCKS5 client lib that works against
+        //      Multilogin's gateway — SocksClient direct gets "Socket closed",
+        //      proxy-chain breaks inside Render's container)
+        //   3. Pipes bytes both ways
+        //
+        // IPv6 quirk: Chromium may CONNECT to literal `[2604:...]:443` for
+        // some AAAA-having subresources. parseConnectTarget handles that;
+        // launch args also disable IPv6 + force DNS resolution via the proxy
+        // (--host-resolver-rules) so Chromium never tries to resolve locally.
+        const [{ createServer }, { SocksProxyAgent }] = await Promise.all([
           import('node:http'),
-          import('socks'),
+          import('socks-proxy-agent'),
         ]);
-        const upHost = opts.proxy.host;
-        const upPort = opts.proxy.port;
-        const upUser = opts.proxy.username!;
-        const upPass = opts.proxy.password!;
+        const upstreamUrl =
+          `socks5://${encodeURIComponent(opts.proxy.username!)}:${encodeURIComponent(opts.proxy.password!)}` +
+          `@${opts.proxy.host}:${opts.proxy.port}`;
+        const upstreamAgent = new SocksProxyAgent(upstreamUrl);
+
+        const parseTarget = (s: string): { host: string; port: number } => {
+          if (s.startsWith('[')) {
+            const i = s.indexOf(']:');
+            return { host: s.slice(1, i), port: Number(s.slice(i + 2)) };
+          }
+          const c = s.lastIndexOf(':');
+          return { host: s.slice(0, c), port: Number(s.slice(c + 1)) };
+        };
+
         const server = createServer();
         server.on('connect', async (req, clientSocket, head) => {
+          const { host: tHost, port: tPort } = parseTarget(req.url ?? '');
           try {
-            const target = req.url ?? '';
-            const colon = target.lastIndexOf(':');
-            const tHost = target.slice(0, colon);
-            const tPort = Number(target.slice(colon + 1));
-            const { socket } = await SocksClient.createConnection({
-              proxy: { host: upHost, port: upPort, type: 5, userId: upUser, password: upPass },
-              command: 'connect',
-              destination: { host: tHost, port: tPort },
-            });
+            // socks-proxy-agent.connect expects a ClientRequest but we pass
+            // the IncomingMessage from a server's 'connect' event. Same
+            // useful interface (Symbol(kHeaders), URL fields) — cast through
+            // unknown rather than fight the type.
+            const upstreamSocket = (await upstreamAgent.connect(
+              req as unknown as import('node:http').ClientRequest,
+              { host: tHost, port: tPort, secureEndpoint: false } as Parameters<typeof upstreamAgent.connect>[1],
+            )) as unknown as import('node:net').Socket;
             clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-            if (head.length) socket.write(head);
-            socket.pipe(clientSocket);
-            clientSocket.pipe(socket);
+            if (head.length) upstreamSocket.write(head);
+            upstreamSocket.pipe(clientSocket);
+            clientSocket.pipe(upstreamSocket);
             const teardown = () => {
-              socket.destroy();
-              clientSocket.destroy();
+              try { upstreamSocket.destroy(); } catch { /* noop */ }
+              try { clientSocket.destroy(); } catch { /* noop */ }
             };
-            socket.on('error', teardown);
+            upstreamSocket.on('error', teardown);
+            upstreamSocket.on('end', teardown);
             clientSocket.on('error', teardown);
+            clientSocket.on('end', teardown);
           } catch (e) {
-            clientSocket.end(
-              `HTTP/1.1 502 Bad Gateway\r\n\r\n${(e as Error).message}`,
-            );
+            try {
+              clientSocket.end(`HTTP/1.1 502 Bad Gateway\r\n\r\n${(e as Error).message}`);
+            } catch { /* noop */ }
           }
         });
         await new Promise<void>((resolve, reject) => {
@@ -180,10 +200,9 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
         const addr = server.address();
         if (!addr || typeof addr === 'string') throw new Error('bridge listen failed');
         bridgeUrl = `http://127.0.0.1:${addr.port}`;
-        // Store close fn on the server-level promise via the cleanup closure.
         socksBridgeServer = server;
         // eslint-disable-next-line no-console
-        console.log('[browserleaks] custom bridge listening on', bridgeUrl);
+        console.log('[browserleaks] bridge listening on', bridgeUrl);
         proxyServer = bridgeUrl;
         proxyUsername = undefined;
         proxyPassword = undefined;
@@ -200,8 +219,14 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
           proxy: { server: proxyServer },
           args: [
             '--disable-blink-features=AutomationControlled',
-            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-features=IsolateOrigins,site-per-process,IPv6',
             '--no-sandbox',
+            // Disable IPv6 (Chromium may CONNECT to literal [ipv6]:port for
+            // AAAA-having subresources; some hosts then time out via the proxy).
+            '--disable-ipv6',
+            // Force DNS resolution to go through the proxy (not the local
+            // resolver), so Multilogin sees real DNS queries from its egress IP.
+            '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
           ],
         });
         // eslint-disable-next-line no-console
@@ -224,7 +249,10 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
       });
       const page = await context.newPage();
       await page.goto(BROWSERLEAKS_URL, {
-        waitUntil: 'networkidle',
+        // Use 'domcontentloaded' (not 'networkidle') — with --host-resolver-rules
+        // blocking many subresources, the page never reaches networkidle.
+        // DOM ready is enough for our table-scrape.
+        waitUntil: 'domcontentloaded',
         timeout: NAVIGATION_TIMEOUT_MS,
       });
       // Give JS-augmented panels (DNS leak, blacklists) a beat to populate.

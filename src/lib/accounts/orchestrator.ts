@@ -124,13 +124,17 @@ export class AccountOrchestrator {
     if (error || !row) throw new Error(`Proxy ${proxy_id} not found`);
 
     const validator = new ProxyValidator();
+    // Provider-specific protocol: Multilogin Mobile Proxies are SOCKS5
+    // (verified 2026-06-01 — gate.multilogin.com:1080 socks5). HTTP is the
+    // fallback for legacy providers (iProyal etc.).
+    const proxyProtocol = row.provider === 'multilogin' ? 'socks5' : 'http';
     const verdict = await validator.validate(
       {
         host: row.host,
         port: row.port,
         username: row.username ?? undefined,
         password: row.password_encrypted ?? undefined,
-        type: 'http',
+        type: proxyProtocol,
         country: row.country ?? undefined,
         provider: row.provider,
       },
@@ -298,7 +302,7 @@ export class AccountOrchestrator {
             port: proxyRow.port,
             username: proxyRow.username ?? undefined,
             password: proxyRow.password_encrypted ?? undefined,
-            type: 'http',
+            type: proxyRow.provider === 'multilogin' ? 'socks5' : 'http',
             country: proxyRow.country ?? req.country,
           }
         : undefined,

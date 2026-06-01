@@ -376,6 +376,58 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
     });
   }
 
+  /**
+   * Enable or disable ADB on running Cloud Phones.
+   *
+   * Endpoint reverse-engineered from the Multilogin web bundle's
+   * `setMobileProfilesADB` method (verified 2026-06-01). The phone MUST be
+   * in status=0 (running) — otherwise the API returns success_amount=0 with
+   * code 42002 "profile is not running; ADB toggle skipped".
+   *
+   * After a successful enable, poll mobileAdbInfo() until items[].status
+   * transitions from "disabled" to populated host:port — typically <5s.
+   */
+  async setMobileAdb(profileIds: string[], enabled: boolean): Promise<{
+    success_amount: number;
+    fail_amount: number;
+    fail_details: Array<{ id: string; code: number; msg: string }>;
+  }> {
+    this.requireToken();
+    if (profileIds.length === 0) throw new Error('setMobileAdb: empty ids');
+    return this.cloudRequest('POST', '/mobile_profiles/phone/adb/set', {
+      ids: profileIds,
+      enabled,
+    });
+  }
+
+  /**
+   * Wait until a Cloud Phone reaches status=0 (running) or rejects.
+   *
+   * Cloud Phones boot in ~25-45s. /statuses returns 1=booting, 0=running,
+   * other = stopped/error. Poll every `intervalMs` until status=0 or timeout.
+   */
+  async waitForMobileRunning(
+    profileId: string,
+    opts: { timeoutMs?: number; intervalMs?: number } = {},
+  ): Promise<void> {
+    const timeoutMs = opts.timeoutMs ?? 90_000;
+    const intervalMs = opts.intervalMs ?? 3_000;
+    const start = performance.now();
+    let lastStatus: number | string | undefined;
+    while (performance.now() - start < timeoutMs) {
+      const resp = (await this.mobileStatuses([profileId])) as {
+        data?: { success_details?: Array<{ id: string; status: number }> };
+      };
+      const item = resp.data?.success_details?.find((it) => it.id === profileId);
+      lastStatus = item?.status;
+      if (item?.status === 0) return;
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error(
+      `waitForMobileRunning: timeout after ${timeoutMs}ms (last status=${String(lastStatus)})`,
+    );
+  }
+
   /** Per-month Cloud Phone minutes quota. */
   async mobileMinutesLimit(): Promise<{
     current_used_value: number;

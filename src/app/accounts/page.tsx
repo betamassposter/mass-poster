@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin } from '@/lib/db/admin';
 import { CURRENT_WORKSPACE_ID } from '@/lib/db/workspace';
 import { AccountActions } from './account-actions';
+import { PhoneActions } from './phone-actions';
 import { KPICard } from '@/components/ui/kpi-card';
 import { AccountStatusPill } from '@/components/ui/status-pill';
 import { Users, Server, ShieldCheck, AlertTriangle, ArrowUpRight } from 'lucide-react';
@@ -160,6 +161,7 @@ export default async function AccountsPage() {
                   <th className="text-right px-5 py-3 font-medium">Cap</th>
                   <th className="text-left px-5 py-3 font-medium">Profile</th>
                   <th className="text-left px-5 py-3 font-medium">Proxy</th>
+                  <th className="text-left px-5 py-3 font-medium">Phone</th>
                 </tr>
               </thead>
               <tbody>
@@ -207,6 +209,13 @@ export default async function AccountsPage() {
                       </td>
                       <td className="px-5 py-3.5 font-mono text-[11px] text-text-muted">
                         {a.proxy_id ? a.proxy_id.slice(0, 8) : <span className="text-text-faint">—</span>}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {a.multilogin_profile_id ? (
+                          <PhoneActions profileId={a.multilogin_profile_id} handle={a.handle} />
+                        ) : (
+                          <span className="text-text-faint text-[11px]">—</span>
+                        )}
                       </td>
                     </tr>
                   );

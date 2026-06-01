@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       fonts-dejavu \
       fonts-noto-color-emoji \
       ca-certificates \
+      android-tools-adb \
     && rm -rf /var/lib/apt/lists/*
 
 # Enable pnpm (corepack ships with Node ≥16). Pin to the same major as local

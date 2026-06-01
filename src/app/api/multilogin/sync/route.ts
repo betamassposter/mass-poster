@@ -121,14 +121,31 @@ export async function POST() {
 
     // Mobile profiles via the REAL endpoint (underscore + plural + phone path —
     // verified 2026-06-01 by Playwright-capturing the actual web UI requests).
+    //
+    // Quirk: Multilogin returns HTTP 500 + {error_code: INTERNAL_SERVER_ERROR,
+    // message: "returned data is empty"} when the user has zero mobile profiles
+    // (instead of 200 + empty array). We treat that specific shape as "no
+    // profiles" and continue; any other 500 is a real error.
+    let mobileProfiles: MultiloginMobileProfile[] = [];
     const mobileRes = await fetch(
       'https://api.multilogin.com/mobile_profiles/phone/list?page=1&page_size=200',
       { headers: { Authorization: `Bearer ${TOKEN}` } },
     );
     const mobileJson = (await mobileRes.json()) as {
       data?: { items?: MultiloginMobileProfile[]; total?: number };
+      status?: { error_code?: string; message?: string };
     };
-    const mobileProfiles = mobileJson?.data?.items ?? [];
+    if (mobileRes.ok) {
+      mobileProfiles = mobileJson?.data?.items ?? [];
+    } else if (mobileRes.status === 500 && mobileJson?.status?.message === 'returned data is empty') {
+      // Multilogin quirk: 0 mobile profiles → 500. Treat as empty.
+      mobileProfiles = [];
+    } else {
+      log.warn('mobile profiles fetch failed', {
+        http: mobileRes.status,
+        error: mobileJson?.status,
+      });
+    }
 
     log.info('multilogin profiles fetched', {
       folders: folders.length,

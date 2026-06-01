@@ -2,10 +2,10 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Select, Field } from '@/components/ui/input';
-import { Input } from '@/components/ui/input';
-import { Plus, Server } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 type Platform = 'instagram' | 'tiktok' | 'youtube_shorts' | 'x' | 'linkedin' | 'facebook';
 
@@ -35,7 +35,6 @@ export function AccountActions({
   const [isPending, startTransition] = useTransition();
   const [brandId, setBrandId] = useState(brands[0]?.id ?? '');
   const [platform, setPlatform] = useState<Platform>('instagram');
-  const [proxyCount, setProxyCount] = useState(5);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   function createAccount() {
@@ -60,24 +59,9 @@ export function AccountActions({
     });
   }
 
-  function rentProxies() {
-    setMessage(null);
-    startTransition(async () => {
-      try {
-        const res = await fetch('/api/proxy/rent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ count: proxyCount }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? 'Request failed');
-        setMessage({ type: 'ok', text: `Rented ${json.count} proxies` });
-        router.refresh();
-      } catch (e) {
-        setMessage({ type: 'err', text: (e as Error).message });
-      }
-    });
-  }
+  // rentProxies removed — /api/proxy/rent endpoint deleted (it called
+  // Multilogin's /mobile-proxy/allocate which is HTTP 501 on Pro_10).
+  // Proxy sourcing now happens via the /proxies page → Sync from Multilogin.
 
   return (
     <div className="space-y-5">
@@ -123,28 +107,11 @@ export function AccountActions({
 
       {proxiesAvailable === 0 && brands.length > 0 && (
         <div className="text-[12px] text-[color:var(--status-warning)] flex items-center gap-1.5">
-          ⚠ No proxies available. Rent some below.
+          ⚠ No proxies in pool. Go to{' '}
+          <Link href="/proxies" className="underline">/proxies</Link> → click{' '}
+          <strong>Sync from Multilogin</strong> after creating a profile in Multilogin.
         </div>
       )}
-
-      <div className="border-t border-border-subtle pt-5 grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-end">
-        <Field label="Rent proxies (mock)">
-          <Input
-            type="number"
-            min={1}
-            max={50}
-            value={proxyCount}
-            onChange={(e) => setProxyCount(Number(e.target.value))}
-            disabled={isPending}
-          />
-        </Field>
-        <Button onClick={rentProxies} disabled={isPending} loading={isPending} icon={<Server size={14} />}>
-          Rent {proxyCount} proxies
-        </Button>
-        <span className="text-[11px] text-text-muted self-center md:text-right">
-          mock until <code className="font-mono">iProyal</code> creds
-        </span>
-      </div>
 
       {message && (
         <div

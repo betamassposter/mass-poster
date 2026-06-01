@@ -8,6 +8,7 @@ import type {
 } from './types.ts';
 import { AbuseIpdbReputationProvider } from './providers/abuseipdb.ts';
 import { BrowserleaksIpReputationProvider } from './providers/browserleaks.ts';
+import { ProxycheckProvider } from './providers/proxycheck.ts';
 import { readCached, writeCached } from './ip-reputation-cache.ts';
 
 const log = logger('accounts/proxy-validator');
@@ -34,9 +35,14 @@ export class ProxyValidator {
   private strict: boolean;
 
   constructor(opts?: { providers?: IpReputationProvider[]; strict?: boolean }) {
+    // Default dual-source gate: AbuseIPDB (community abuse score) + Proxycheck
+    // (proxy/VPN/datacenter classification). Both API-based, work for all
+    // proxy types including SOCKS5+auth. BrowserleaksIpReputationProvider is
+    // kept available for cases where browser-side leak detection matters
+    // (HTTP proxies, no auth) — opt in by passing it to opts.providers.
     this.providers = opts?.providers ?? [
       new AbuseIpdbReputationProvider(),
-      new BrowserleaksIpReputationProvider(),
+      new ProxycheckProvider(),
     ];
     this.strict = opts?.strict ?? env.IP_REPUTATION_STRICT;
   }

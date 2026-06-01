@@ -111,6 +111,7 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
     const errors: string[] = [];
     let bridgeUrl: string | null = null;
     let ephemeralBrowser: Browser | null = null; // launched fresh for SOCKS5+auth
+    let socksBridgeServer: import('node:http').Server | null = null;
 
     try {
       // Chromium does not support SOCKS5 with username/password auth
@@ -130,33 +131,59 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
       const isSocks5Auth =
         opts.proxy.type === 'socks5' && !!opts.proxy.username && !!opts.proxy.password;
       if (isSocks5Auth) {
-        const { anonymizeProxy } = await import('proxy-chain');
-        const upstream =
-          `socks5://${encodeURIComponent(opts.proxy.username!)}:${encodeURIComponent(opts.proxy.password!)}` +
-          `@${opts.proxy.host}:${opts.proxy.port}`;
+        // Custom in-process HTTP CONNECT → SOCKS5 bridge.
+        //
+        // proxy-chain v3 fails inside Render's container (probably Node 22 +
+        // IPv6 loopback handling differences). We build the bridge ourselves
+        // with node:http + the `socks` package (already transitively installed
+        // via socks-proxy-agent). Full control over listen interface.
+        const [{ createServer }, { SocksClient }] = await Promise.all([
+          import('node:http'),
+          import('socks'),
+        ]);
+        const upHost = opts.proxy.host;
+        const upPort = opts.proxy.port;
+        const upUser = opts.proxy.username!;
+        const upPass = opts.proxy.password!;
+        const server = createServer();
+        server.on('connect', async (req, clientSocket, head) => {
+          try {
+            const target = req.url ?? '';
+            const colon = target.lastIndexOf(':');
+            const tHost = target.slice(0, colon);
+            const tPort = Number(target.slice(colon + 1));
+            const { socket } = await SocksClient.createConnection({
+              proxy: { host: upHost, port: upPort, type: 5, userId: upUser, password: upPass },
+              command: 'connect',
+              destination: { host: tHost, port: tPort },
+            });
+            clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+            if (head.length) socket.write(head);
+            socket.pipe(clientSocket);
+            clientSocket.pipe(socket);
+            const teardown = () => {
+              socket.destroy();
+              clientSocket.destroy();
+            };
+            socket.on('error', teardown);
+            clientSocket.on('error', teardown);
+          } catch (e) {
+            clientSocket.end(
+              `HTTP/1.1 502 Bad Gateway\r\n\r\n${(e as Error).message}`,
+            );
+          }
+        });
+        await new Promise<void>((resolve, reject) => {
+          server.once('error', reject);
+          server.listen(0, '127.0.0.1', resolve);
+        });
+        const addr = server.address();
+        if (!addr || typeof addr === 'string') throw new Error('bridge listen failed');
+        bridgeUrl = `http://127.0.0.1:${addr.port}`;
+        // Store close fn on the server-level promise via the cleanup closure.
+        socksBridgeServer = server;
         // eslint-disable-next-line no-console
-        console.log('[browserleaks] creating SOCKS5+auth bridge for', opts.proxy.host);
-        bridgeUrl = await anonymizeProxy(upstream);
-        // eslint-disable-next-line no-console
-        console.log('[browserleaks] bridge URL:', bridgeUrl);
-        // Probe the bridge with a plain HTTP request first — if THIS fails,
-        // the bridge itself is broken; if it succeeds but Chromium still gets
-        // TUNNEL_CONNECTION_FAILED, the issue is Chromium↔bridge specifically.
-        try {
-          const probeReq = await fetch('http://api.ipify.org', {
-            // @ts-expect-error undici dispatcher
-            dispatcher: await (async () => {
-              const { ProxyAgent } = await import('undici');
-              return new ProxyAgent(bridgeUrl);
-            })(),
-            signal: AbortSignal.timeout(10_000),
-          });
-          // eslint-disable-next-line no-console
-          console.log('[browserleaks] bridge HTTP probe HTTP', probeReq.status, 'IP:', await probeReq.text());
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.log('[browserleaks] bridge HTTP probe FAILED:', (e as Error).message);
-        }
+        console.log('[browserleaks] custom bridge listening on', bridgeUrl);
         proxyServer = bridgeUrl;
         proxyUsername = undefined;
         proxyPassword = undefined;
@@ -334,13 +361,10 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
       if (ephemeralBrowser) {
         await ephemeralBrowser.close().catch(() => {});
       }
-      if (bridgeUrl) {
-        try {
-          const { closeAnonymizedProxy } = await import('proxy-chain');
-          await closeAnonymizedProxy(bridgeUrl, true);
-        } catch {
-          // bridge teardown best-effort
-        }
+      if (socksBridgeServer) {
+        await new Promise<void>((r) =>
+          socksBridgeServer!.close(() => r()),
+        ).catch(() => {});
       }
     }
 

@@ -337,18 +337,57 @@ export class MultiloginCloudPhoneProvider implements AntidetectProvider {
     net_type?: 0 | 1;
   }): Promise<{ id: string }> {
     throw new Error(
-      'createMobileProfile: Cloud Phone API path not yet confirmed verbatim from Postman collection. ' +
-        'When credentials are wired, capture the actual `xcli mobile-profiles-create --debug` HTTP trace ' +
-        'and fill in the exact endpoint here.',
+      'createMobileProfile: Multilogin REST does not expose mobile profile creation on Pro plan. ' +
+        'Create via app.multilogin.com → Mobile tab, then Sync from Multilogin in Mass Poster.',
     );
   }
 
-  async launchMobile(_ids: number[]): Promise<{ port: number; ids: number[] }> {
-    throw new Error('launchMobile: confirm endpoint vs xcli mobile-phone-launch trace');
+  /** Start a Cloud Phone for the given mobile profile ids (per-minute billing starts). */
+  async launchMobile(profileIds: string[]): Promise<unknown> {
+    this.requireToken();
+    if (profileIds.length === 0) throw new Error('launchMobile: empty ids');
+    return this.cloudRequest<unknown>('POST', '/mobile_profiles/phone/start', {
+      ids: profileIds,
+    });
   }
 
-  async shutdownMobile(_ids: number[]): Promise<void> {
-    throw new Error('shutdownMobile: confirm endpoint vs xcli mobile-phone-shutdown trace');
+  /** Stop a running Cloud Phone (halts per-minute billing). */
+  async shutdownMobile(profileIds: string[]): Promise<void> {
+    this.requireToken();
+    if (profileIds.length === 0) throw new Error('shutdownMobile: empty ids');
+    await this.cloudRequest<unknown>('POST', '/mobile_profiles/phone/stop', {
+      ids: profileIds,
+    });
+  }
+
+  /** Run-state for a set of profiles. */
+  async mobileStatuses(profileIds: string[]): Promise<unknown> {
+    this.requireToken();
+    return this.cloudRequest<unknown>('POST', '/mobile_profiles/phone/statuses', {
+      ids: profileIds,
+    });
+  }
+
+  /** ADB info for a Cloud Phone (status=disabled when stopped or ADB not enabled). */
+  async mobileAdbInfo(profileIds: string[]): Promise<unknown> {
+    this.requireToken();
+    return this.cloudRequest<unknown>('POST', '/mobile_profiles/phone/adb/info', {
+      ids: profileIds,
+    });
+  }
+
+  /** Per-month Cloud Phone minutes quota. */
+  async mobileMinutesLimit(): Promise<{
+    current_used_value: number;
+    metric_limit: number;
+    remaining_limit: number;
+  }> {
+    this.requireToken();
+    return this.cloudRequest<{
+      current_used_value: number;
+      metric_limit: number;
+      remaining_limit: number;
+    }>('GET', '/mobile_profiles/limit');
   }
 
   // ─────────────────────────────────────────────────────────────────

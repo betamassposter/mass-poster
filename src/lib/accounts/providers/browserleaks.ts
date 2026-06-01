@@ -134,8 +134,30 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
         const upstream =
           `socks5://${encodeURIComponent(opts.proxy.username!)}:${encodeURIComponent(opts.proxy.password!)}` +
           `@${opts.proxy.host}:${opts.proxy.port}`;
+        // eslint-disable-next-line no-console
+        console.log('[browserleaks] creating SOCKS5+auth bridge for', opts.proxy.host);
         bridgeUrl = await anonymizeProxy(upstream);
-        proxyServer = bridgeUrl; // http://127.0.0.1:<random>
+        // eslint-disable-next-line no-console
+        console.log('[browserleaks] bridge URL:', bridgeUrl);
+        // Probe the bridge with a plain HTTP request first — if THIS fails,
+        // the bridge itself is broken; if it succeeds but Chromium still gets
+        // TUNNEL_CONNECTION_FAILED, the issue is Chromium↔bridge specifically.
+        try {
+          const probeReq = await fetch('http://api.ipify.org', {
+            // @ts-expect-error undici dispatcher
+            dispatcher: await (async () => {
+              const { ProxyAgent } = await import('undici');
+              return new ProxyAgent(bridgeUrl);
+            })(),
+            signal: AbortSignal.timeout(10_000),
+          });
+          // eslint-disable-next-line no-console
+          console.log('[browserleaks] bridge HTTP probe HTTP', probeReq.status, 'IP:', await probeReq.text());
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.log('[browserleaks] bridge HTTP probe FAILED:', (e as Error).message);
+        }
+        proxyServer = bridgeUrl;
         proxyUsername = undefined;
         proxyPassword = undefined;
       } else {
@@ -144,6 +166,8 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
 
       let browser: Browser;
       if (isSocks5Auth) {
+        // eslint-disable-next-line no-console
+        console.log('[browserleaks] launching ephemeral chromium with proxy', proxyServer);
         ephemeralBrowser = await chromium.launch({
           headless: true,
           proxy: { server: proxyServer },
@@ -153,6 +177,8 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
             '--no-sandbox',
           ],
         });
+        // eslint-disable-next-line no-console
+        console.log('[browserleaks] ephemeral chromium ready');
         browser = ephemeralBrowser;
       } else {
         browser = await getBrowser();

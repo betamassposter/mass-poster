@@ -33,7 +33,9 @@ import type {
  */
 
 const BROWSERLEAKS_URL = 'https://browserleaks.com/ip';
-const NAVIGATION_TIMEOUT_MS = 30_000;
+// Multilogin Mobile Proxy + bridge + browserleaks.com (heavy page) often
+// takes 30-45s. 60s gives headroom without hanging the user forever.
+const NAVIGATION_TIMEOUT_MS = 60_000;
 
 let _browser: Browser | null = null;
 

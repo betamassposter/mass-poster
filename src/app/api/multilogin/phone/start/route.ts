@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     const ml = new MultiloginCloudPhoneProvider();
     const result = await ml.launchMobile([profile_id]);
     log.info('phone launched', { profile_id });
-    return NextResponse.json({ ok: true, profile_id, result: result.data });
+    return NextResponse.json({ ok: true, profile_id, result });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(

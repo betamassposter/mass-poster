@@ -302,7 +302,7 @@ export class AccountOrchestrator {
             port: proxyRow.port,
             username: proxyRow.username ?? undefined,
             password: proxyRow.password_encrypted ?? undefined,
-            type: proxyRow.provider === 'multilogin' ? 'socks5' : 'http',
+            type: 'socks5',
             country: proxyRow.country ?? req.country,
           }
         : undefined,

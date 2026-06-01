@@ -110,6 +110,7 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
     let scrape: BrowserleaksScrape = {};
     const errors: string[] = [];
     let bridgeUrl: string | null = null;
+    let ephemeralBrowser: Browser | null = null; // launched fresh for SOCKS5+auth
 
     try {
       // Chromium does not support SOCKS5 with username/password auth
@@ -118,13 +119,20 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
       // authless local connection, then forwards through the upstream
       // authenticated SOCKS5. Playwright then proxies through 127.0.0.1
       // (no auth needed at that layer) and gets the same egress IP.
+      //
+      // Important: the bridge URL must be baked into chromium.launch (not
+      // newContext) for the HTTP CONNECT tunnel to negotiate cleanly. Per-
+      // context override hits ERR_TUNNEL_CONNECTION_FAILED on Chromium 124+
+      // when the upstream is a local loopback. We launch ephemeral per-call.
       let proxyServer: string;
       let proxyUsername: string | undefined = opts.proxy.username;
       let proxyPassword: string | undefined = opts.proxy.password;
-      if (opts.proxy.type === 'socks5' && opts.proxy.username && opts.proxy.password) {
+      const isSocks5Auth =
+        opts.proxy.type === 'socks5' && !!opts.proxy.username && !!opts.proxy.password;
+      if (isSocks5Auth) {
         const { anonymizeProxy } = await import('proxy-chain');
         const upstream =
-          `socks5://${encodeURIComponent(opts.proxy.username)}:${encodeURIComponent(opts.proxy.password)}` +
+          `socks5://${encodeURIComponent(opts.proxy.username!)}:${encodeURIComponent(opts.proxy.password!)}` +
           `@${opts.proxy.host}:${opts.proxy.port}`;
         bridgeUrl = await anonymizeProxy(upstream);
         proxyServer = bridgeUrl; // http://127.0.0.1:<random>
@@ -134,13 +142,25 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
         proxyServer = `${opts.proxy.type}://${opts.proxy.host}:${opts.proxy.port}`;
       }
 
-      const browser = await getBrowser();
+      let browser: Browser;
+      if (isSocks5Auth) {
+        ephemeralBrowser = await chromium.launch({
+          headless: true,
+          proxy: { server: proxyServer },
+          args: [
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--no-sandbox',
+          ],
+        });
+        browser = ephemeralBrowser;
+      } else {
+        browser = await getBrowser();
+      }
       context = await browser.newContext({
-        proxy: {
-          server: proxyServer,
-          username: proxyUsername,
-          password: proxyPassword,
-        },
+        proxy: isSocks5Auth
+          ? undefined // proxy already at launch level
+          : { server: proxyServer, username: proxyUsername, password: proxyPassword },
         userAgent:
           'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
         locale: 'en-US',
@@ -283,6 +303,11 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
     } catch (err) {
       errors.push(`browserleaks scrape failed: ${(err as Error).message}`);
     } finally {
+      await context?.close().catch(() => {});
+      // Ephemeral browser launched for SOCKS5+auth — close it.
+      if (ephemeralBrowser) {
+        await ephemeralBrowser.close().catch(() => {});
+      }
       if (bridgeUrl) {
         try {
           const { closeAnonymizedProxy } = await import('proxy-chain');
@@ -291,7 +316,6 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
           // bridge teardown best-effort
         }
       }
-      await context?.close().catch(() => {});
     }
 
     if (Object.keys(scrape).length === 0 && errors.length === 0) {

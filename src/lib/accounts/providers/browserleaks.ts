@@ -106,6 +106,27 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
       };
     }
 
+    // Chromium does not support SOCKS5 with username/password authentication
+    // (known platform limitation — see https://crbug.com/256785). Multilogin
+    // Mobile Proxies require SOCKS5 + auth, so browserleaks cannot probe them
+    // directly. We return clean=true with a `skipped` note so the validator
+    // verdict relies on AbuseIPDB alone for these proxies. Long-term fix:
+    // wire a local SOCKS5-to-HTTP bridge (e.g. 3proxy / Shadowsocks) on
+    // 127.0.0.1 and point Chromium at the bridge with no auth.
+    if (opts.proxy.type === 'socks5' && opts.proxy.username && opts.proxy.password) {
+      return {
+        provider: this.name,
+        ip,
+        clean: true,
+        signals: {
+          notes: [
+            'skipped — Chromium does not support SOCKS5 + username/password authentication; AbuseIPDB-only verdict for this proxy',
+          ],
+        },
+        checked_at: startedAt,
+      };
+    }
+
     let context: BrowserContext | null = null;
     let scrape: BrowserleaksScrape = {};
     const errors: string[] = [];

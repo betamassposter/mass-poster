@@ -179,9 +179,9 @@ async function observeEgressIp(proxy: ProxyCredential): Promise<string | null> {
         ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password)}@`
         : '';
 
-    // SOCKS4/SOCKS5 → undici doesn't support SOCKS, so we route via node:https
+    // SOCKS5 → undici doesn't support SOCKS, so we route via node:https
     // with socks-proxy-agent. Multilogin Mobile Proxies are SOCKS5.
-    if (proxy.type === 'socks4' || proxy.type === 'socks5') {
+    if (proxy.type === 'socks5') {
       const [{ SocksProxyAgent }, https] = await Promise.all([
         import('socks-proxy-agent'),
         import('node:https'),

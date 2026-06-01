@@ -63,10 +63,22 @@ COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 
+# Standalone's pruned node_modules misses Playwright runtime files
+# (browsers.json + Chromium driver). Copy the FULL node_modules from build
+# so the browserleaks IP gate can launch headless Chrome through the
+# Multilogin SOCKS5 proxy at validation time. Image bloats ~1GB but it's
+# the reliable fix vs fighting Next.js outputFileTracingIncludes globs.
+COPY --from=build /app/node_modules ./node_modules
+
 # Copy migrations + scripts so the running container can apply pending DB
 # changes via `pnpm db:apply` (needs SUPABASE_DB_PASSWORD env at run time).
 COPY --from=build /app/supabase ./supabase
 COPY --from=build /app/scripts ./scripts
+
+# Playwright also needs its browser binaries (downloaded by the Playwright
+# base image during the deps stage). Carry them over too.
+COPY --from=build /ms-playwright /ms-playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 EXPOSE 3000
 

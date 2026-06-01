@@ -7,7 +7,7 @@ import { logger } from '@/lib/log';
 
 const log = logger('api/multilogin/sync');
 
-interface MultiloginProfile {
+interface MultiloginDesktopProfile {
   id: string;
   name: string;
   browser_type: string;
@@ -18,6 +18,33 @@ interface MultiloginProfile {
   created_at: string;
   last_launched_at: string;
   removed_at?: string;
+}
+
+interface MultiloginMobileProfile {
+  id: string; // numeric string e.g. "622003050059399361"
+  serial_name: string; // user-given display name
+  serial_no: string;
+  folder_id: string;
+  usecase_id: string;
+  usecase_name: string; // e.g. "Instagram"
+  status: number;
+  created_at: string;
+  last_launched_at: string | null;
+  equipment_info: {
+    country_name: string;
+    device_brand: string;
+    device_model: string;
+    os_version: string;
+    phone_number: string;
+    time_zone: string;
+  };
+  proxy: {
+    server: string;
+    port: number;
+    type: string;
+    username: string;
+    password: string;
+  };
 }
 
 /**
@@ -62,18 +89,19 @@ export async function POST() {
       );
     }
 
-    // List folders
-    const foldersRes = await fetch('https://api.multilogin.com/workspace/folders', {
-      headers: { Authorization: `Bearer ${TOKEN}` },
-    });
+    // List all folders (folder_type=all includes both browser AND mobile folders)
+    const foldersRes = await fetch(
+      'https://api.multilogin.com/workspace/folders?folder_type=all',
+      { headers: { Authorization: `Bearer ${TOKEN}` } },
+    );
     const foldersJson = (await foldersRes.json()) as {
       data?: { folders?: Array<{ folder_id: string; name: string; folder_type: string }> };
     };
     const folders = foldersJson?.data?.folders ?? [];
 
-    // For each folder, list active profiles
-    const allProfiles: MultiloginProfile[] = [];
-    for (const folder of folders) {
+    // Desktop profiles via /profile/search
+    const desktopProfiles: MultiloginDesktopProfile[] = [];
+    for (const folder of folders.filter((f) => f.folder_type === 'browser')) {
       const searchRes = await fetch('https://api.multilogin.com/profile/search', {
         method: 'POST',
         headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
@@ -86,15 +114,26 @@ export async function POST() {
         }),
       });
       const searchJson = (await searchRes.json()) as {
-        data?: { profiles?: MultiloginProfile[]; total_count?: number };
+        data?: { profiles?: MultiloginDesktopProfile[] };
       };
-      const profiles = searchJson?.data?.profiles ?? [];
-      allProfiles.push(...profiles);
+      desktopProfiles.push(...(searchJson?.data?.profiles ?? []));
     }
+
+    // Mobile profiles via the REAL endpoint (underscore + plural + phone path —
+    // verified 2026-06-01 by Playwright-capturing the actual web UI requests).
+    const mobileRes = await fetch(
+      'https://api.multilogin.com/mobile_profiles/phone/list?page=1&page_size=200',
+      { headers: { Authorization: `Bearer ${TOKEN}` } },
+    );
+    const mobileJson = (await mobileRes.json()) as {
+      data?: { items?: MultiloginMobileProfile[]; total?: number };
+    };
+    const mobileProfiles = mobileJson?.data?.items ?? [];
 
     log.info('multilogin profiles fetched', {
       folders: folders.length,
-      profiles: allProfiles.length,
+      desktop_profiles: desktopProfiles.length,
+      mobile_profiles: mobileProfiles.length,
     });
 
     // Upsert into Mass Poster `proxy` table.
@@ -105,27 +144,35 @@ export async function POST() {
     let newCount = 0;
     let updatedCount = 0;
 
-    for (const p of allProfiles) {
-      const proxyType = p.os_type === 'ios' || p.os_type === 'android' ? 'mobile' : 'desktop';
+    // Upsert mobile profiles (the primary path — these carry real proxy creds)
+    for (const m of mobileProfiles) {
+      const country = (extractCountryFromUsername(m.proxy.username) ?? m.equipment_info?.country_name?.slice(0, 2))?.toUpperCase();
       const { data: existing } = await supabase
         .from('proxy')
-        .select('id, validation_status')
+        .select('id')
         .eq('workspace_id', CURRENT_WORKSPACE_ID)
-        .eq('multilogin_proxy_id', p.id)
+        .eq('multilogin_proxy_id', m.id)
         .maybeSingle();
-
+      const summary = {
+        profile_name: m.serial_name,
+        usecase: m.usecase_name,
+        device: `${m.equipment_info?.device_brand} ${m.equipment_info?.device_model}`,
+        os_version: m.equipment_info?.os_version,
+        phone_number: m.equipment_info?.phone_number,
+        time_zone: m.equipment_info?.time_zone,
+        created_at: m.created_at,
+        last_launched_at: m.last_launched_at,
+      };
       if (existing) {
-        // Just update metadata, keep validation_status (re-validation is explicit)
         await supabase
           .from('proxy')
           .update({
-            last_validation_summary: {
-              profile_name: p.name,
-              browser_type: p.browser_type,
-              os_type: p.os_type,
-              created_at: p.created_at,
-              last_launched_at: p.last_launched_at,
-            },
+            host: m.proxy.server,
+            port: m.proxy.port,
+            username: m.proxy.username,
+            password_encrypted: m.proxy.password,
+            country: country ?? null,
+            last_validation_summary: summary,
           })
           .eq('id', existing.id);
         updatedCount++;
@@ -133,46 +180,68 @@ export async function POST() {
         const { error: insErr } = await supabase.from('proxy').insert({
           workspace_id: CURRENT_WORKSPACE_ID,
           provider: 'multilogin',
-          proxy_type: proxyType,
-          multilogin_proxy_id: p.id,
-          host: 'multilogin-bundled', // creds are internal to Multilogin
-          port: 0,
-          username: null,
-          password_encrypted: null,
-          country: null, // unknown until first launch
+          proxy_type: 'mobile',
+          multilogin_proxy_id: m.id,
+          host: m.proxy.server,
+          port: m.proxy.port,
+          username: m.proxy.username,
+          password_encrypted: m.proxy.password,
+          country: country ?? null,
           city: null,
           status: 'available',
-          validation_status: 'pending', // never validated yet
-          last_validation_summary: {
-            profile_name: p.name,
-            browser_type: p.browser_type,
-            os_type: p.os_type,
-            created_at: p.created_at,
-            last_launched_at: p.last_launched_at,
-          },
+          validation_status: 'pending',
+          last_validation_summary: summary,
         });
         if (insErr) {
-          log.warn('insert failed', { profile_id: p.id, error: insErr.message });
+          log.warn('insert mobile failed', { profile_id: m.id, error: insErr.message });
         } else {
           newCount++;
         }
       }
     }
 
+    // Desktop profiles — metadata only (no proxy creds available without launch)
+    for (const p of desktopProfiles) {
+      const { data: existing } = await supabase
+        .from('proxy')
+        .select('id')
+        .eq('workspace_id', CURRENT_WORKSPACE_ID)
+        .eq('multilogin_proxy_id', p.id)
+        .maybeSingle();
+      if (existing) {
+        updatedCount++;
+        continue;
+      }
+      const { error } = await supabase.from('proxy').insert({
+        workspace_id: CURRENT_WORKSPACE_ID,
+        provider: 'multilogin',
+        proxy_type: 'desktop',
+        multilogin_proxy_id: p.id,
+        host: 'multilogin-bundled',
+        port: 0,
+        username: null,
+        password_encrypted: null,
+        country: null,
+        status: 'available',
+        validation_status: 'pending',
+        last_validation_summary: {
+          profile_name: p.name,
+          browser_type: p.browser_type,
+          os_type: p.os_type,
+        },
+      });
+      if (!error) newCount++;
+    }
+
     return NextResponse.json({
       ok: true,
       summary: {
         folders: folders.length,
-        profiles_total: allProfiles.length,
+        mobile_profiles: mobileProfiles.length,
+        desktop_profiles: desktopProfiles.length,
         new: newCount,
         updated: updatedCount,
       },
-      profiles: allProfiles.map((p) => ({
-        id: p.id,
-        name: p.name,
-        browser_type: p.browser_type,
-        os_type: p.os_type,
-      })),
     });
   } catch (err) {
     log.error('sync failed', { error: (err as Error).message });
@@ -182,3 +251,14 @@ export async function POST() {
     );
   }
 }
+
+/**
+ * Multilogin encodes proxy geo info in the username, e.g.
+ *   2235508800_b5bc...com-country-it-isp-wind_tre-type-mobile-sid-x...-filter-medium
+ * Extract the country code (2-letter, lowercase in the username).
+ */
+function extractCountryFromUsername(username: string): string | undefined {
+  const m = username.match(/-country-([a-z]{2})/i);
+  return m?.[1]?.toUpperCase();
+}
+

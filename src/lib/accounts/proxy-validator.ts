@@ -174,16 +174,56 @@ export class ProxyValidator {
 
 async function observeEgressIp(proxy: ProxyCredential): Promise<string | null> {
   try {
-    const { ProxyAgent } = await import('undici');
     const auth =
       proxy.username && proxy.password
         ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password)}@`
         : '';
+
+    // SOCKS4/SOCKS5 → undici doesn't support SOCKS, so we route via node:https
+    // with socks-proxy-agent. Multilogin Mobile Proxies are SOCKS5.
+    if (proxy.type === 'socks4' || proxy.type === 'socks5') {
+      const [{ SocksProxyAgent }, https] = await Promise.all([
+        import('socks-proxy-agent'),
+        import('node:https'),
+      ]);
+      const agent = new SocksProxyAgent(
+        `${proxy.type}://${auth}${proxy.host}:${proxy.port}`,
+      );
+      return await new Promise<string | null>((resolve) => {
+        const req = https.get(
+          'https://api.ipify.org?format=json',
+          { agent, timeout: 15_000 },
+          (res) => {
+            if (res.statusCode !== 200) {
+              resolve(null);
+              return;
+            }
+            let body = '';
+            res.on('data', (chunk) => (body += String(chunk)));
+            res.on('end', () => {
+              try {
+                resolve((JSON.parse(body) as { ip?: string }).ip ?? null);
+              } catch {
+                resolve(null);
+              }
+            });
+          },
+        );
+        req.on('timeout', () => {
+          req.destroy();
+          resolve(null);
+        });
+        req.on('error', () => resolve(null));
+      });
+    }
+
+    // HTTP / HTTPS proxy path — undici ProxyAgent handles this.
+    const { ProxyAgent } = await import('undici');
     const dispatcher = new ProxyAgent(`${proxy.type}://${auth}${proxy.host}:${proxy.port}`);
     const res = await fetch('https://api.ipify.org?format=json', {
       // @ts-expect-error — `dispatcher` is a valid undici extension
       dispatcher,
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return null;
     const json = (await res.json()) as { ip?: string };

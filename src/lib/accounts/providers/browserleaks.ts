@@ -106,38 +106,40 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
       };
     }
 
-    // Chromium does not support SOCKS5 with username/password authentication
-    // (known platform limitation — see https://crbug.com/256785). Multilogin
-    // Mobile Proxies require SOCKS5 + auth, so browserleaks cannot probe them
-    // directly. We return clean=true with a `skipped` note so the validator
-    // verdict relies on AbuseIPDB alone for these proxies. Long-term fix:
-    // wire a local SOCKS5-to-HTTP bridge (e.g. 3proxy / Shadowsocks) on
-    // 127.0.0.1 and point Chromium at the bridge with no auth.
-    if (opts.proxy.type === 'socks5' && opts.proxy.username && opts.proxy.password) {
-      return {
-        provider: this.name,
-        ip,
-        clean: true,
-        signals: {
-          notes: [
-            'skipped — Chromium does not support SOCKS5 + username/password authentication; AbuseIPDB-only verdict for this proxy',
-          ],
-        },
-        checked_at: startedAt,
-      };
-    }
-
     let context: BrowserContext | null = null;
     let scrape: BrowserleaksScrape = {};
     const errors: string[] = [];
+    let bridgeUrl: string | null = null;
 
     try {
+      // Chromium does not support SOCKS5 with username/password auth
+      // (crbug.com/256785, open since 2013). For SOCKS5+auth proxies we
+      // spawn a local HTTP CONNECT bridge via proxy-chain — it accepts an
+      // authless local connection, then forwards through the upstream
+      // authenticated SOCKS5. Playwright then proxies through 127.0.0.1
+      // (no auth needed at that layer) and gets the same egress IP.
+      let proxyServer: string;
+      let proxyUsername: string | undefined = opts.proxy.username;
+      let proxyPassword: string | undefined = opts.proxy.password;
+      if (opts.proxy.type === 'socks5' && opts.proxy.username && opts.proxy.password) {
+        const { anonymizeProxy } = await import('proxy-chain');
+        const upstream =
+          `socks5://${encodeURIComponent(opts.proxy.username)}:${encodeURIComponent(opts.proxy.password)}` +
+          `@${opts.proxy.host}:${opts.proxy.port}`;
+        bridgeUrl = await anonymizeProxy(upstream);
+        proxyServer = bridgeUrl; // http://127.0.0.1:<random>
+        proxyUsername = undefined;
+        proxyPassword = undefined;
+      } else {
+        proxyServer = `${opts.proxy.type}://${opts.proxy.host}:${opts.proxy.port}`;
+      }
+
       const browser = await getBrowser();
       context = await browser.newContext({
         proxy: {
-          server: `${opts.proxy.type}://${opts.proxy.host}:${opts.proxy.port}`,
-          username: opts.proxy.username,
-          password: opts.proxy.password,
+          server: proxyServer,
+          username: proxyUsername,
+          password: proxyPassword,
         },
         userAgent:
           'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
@@ -281,6 +283,14 @@ export class BrowserleaksIpReputationProvider implements IpReputationProvider {
     } catch (err) {
       errors.push(`browserleaks scrape failed: ${(err as Error).message}`);
     } finally {
+      if (bridgeUrl) {
+        try {
+          const { closeAnonymizedProxy } = await import('proxy-chain');
+          await closeAnonymizedProxy(bridgeUrl, true);
+        } catch {
+          // bridge teardown best-effort
+        }
+      }
       await context?.close().catch(() => {});
     }
 

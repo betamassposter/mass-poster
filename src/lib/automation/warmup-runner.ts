@@ -172,19 +172,38 @@ export async function runWarmupFull(opts: {
   keep_running?: boolean;
 }): Promise<WarmupRunResult & { phone_minutes_used?: number }> {
   const ml = new MultiloginCloudPhoneProvider();
-  await ml.launchMobile([opts.profile_id]);
-  await ml.waitForMobileRunning(opts.profile_id);
-  await ml.setMobileAdb([opts.profile_id], true);
-  await sleep(2_000, 4_000);
+  let phoneStarted = false;
+  try {
+    await ml.launchMobile([opts.profile_id]);
+    phoneStarted = true;
+    await ml.waitForMobileRunning(opts.profile_id);
+    await ml.setMobileAdb([opts.profile_id], true);
+    await sleep(2_000, 4_000);
 
-  const result = await runWarmupDay({
-    profile_id: opts.profile_id,
-    platform: opts.platform,
-    day: opts.day,
-  });
+    const result = await runWarmupDay({
+      profile_id: opts.profile_id,
+      platform: opts.platform,
+      day: opts.day,
+    });
 
-  if (!opts.keep_running) {
-    await ml.shutdownMobile([opts.profile_id]);
+    if (!opts.keep_running) {
+      await ml.shutdownMobile([opts.profile_id]);
+      phoneStarted = false;
+    }
+    return result;
+  } finally {
+    if (phoneStarted && !opts.keep_running) {
+      try {
+        await ml.shutdownMobile([opts.profile_id]);
+        log.warn('warmup errored; phone force-stopped to halt billing', {
+          profile: opts.profile_id,
+        });
+      } catch (stopErr) {
+        log.error('CRITICAL: failed to stop phone after warmup error — billing leak', {
+          profile: opts.profile_id,
+          error: (stopErr as Error).message,
+        });
+      }
+    }
   }
-  return result;
 }
